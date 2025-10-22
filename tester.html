@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tester de Socket.IO</title>
+</head>
+<body>
+  <h1>Probador del Backend (Versión 2.0 - Sesiones)</h1>
+  <p>Abre la consola del navegador (F12) para ver los logs.</p>
+  
+  <button id="testButton" style="font-size: 20px; padding: 10px;">
+    1. Probar 'iniciar-nivel' (Nivel 1)
+  </button>
+  
+  <button id="testRespuesta" style="font-size: 20px; padding: 10px; margin-top: 10px;">
+    2. Probar 'enviar-respuesta' (Enviar correcta)
+  </button>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <script>
+    // Conectamos a nuestro backend
+    const socket = io('http://localhost:3000');
+    
+    // ¡NUEVO! Aquí guardaremos la pregunta que nos mande el servidor
+    let preguntaActiva = null;
+
+    // --- OYENTES DE EVENTOS DEL SERVIDOR ---
+
+    socket.on('connect', () => {
+      console.log('¡Conectado al servidor!', socket.id);
+    });
+
+    // ¡MODIFICADO! Escuchamos la pregunta nueva
+    socket.on('pregunta-nueva', (pregunta) => {
+      console.log('%c¡PREGUNTA RECIBIDA!', 'color: blue; font-weight: bold;', pregunta.enunciado_funcion);
+      preguntaActiva = pregunta; // Guardamos la pregunta activa
+    });
+    
+    // ¡MODIFICADO! Mostramos más datos
+    socket.on('respuesta-validada', (resultado) => {
+      if (resultado.esCorrecta) {
+        console.log('%c¡RESPUESTA CORRECTA!', 'color: green; font-weight: bold;');
+      } else {
+        console.log('%c¡RESPUESTA INCORRECTA!', 'color: red; font-weight: bold;');
+      }
+      console.log(`Vidas restantes: ${resultado.vidasRestantes} | Puntuación: ${resultado.puntuacionActual}`);
+    });
+
+    // ¡NUEVO! Escuchamos el Game Over
+    socket.on('game-over', (resultado) => {
+      console.error('¡GAME OVER!', `Puntuación final: ${resultado.puntuacionFinal}`);
+      preguntaActiva = null;
+    });
+
+    // ¡NUEVO! Escuchamos el Nivel Completado
+    socket.on('nivel-completado', (resultado) => {
+      console.log('%c¡NIVEL COMPLETADO!', 'color: purple; font-weight: bold;', `Puntuación final: ${resultado.puntuacionFinal}`);
+      preguntaActiva = null;
+    });
+
+    socket.on('error-juego', (error) => {
+      console.error('Error del servidor:', error.mensaje);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Desconectado del servidor');
+    });
+
+    // --- OYENTES DE LOS BOTONES ---
+
+    document.getElementById('testButton').addEventListener('click', () => {
+      console.log('Enviando evento "iniciar-nivel" con ID 1...');
+      socket.emit('iniciar-nivel', 1); 
+    });
+
+    // ¡MODIFICADO! Este botón ahora es inteligente
+    document.getElementById('testRespuesta').addEventListener('click', () => {
+      if (!preguntaActiva) {
+        console.warn('¡No hay pregunta activa! Haz clic en "Iniciar Nivel" primero.');
+        return;
+      }
+      
+      // Creamos la respuesta basada en la pregunta que tenemos guardada
+      const miRespuesta = {
+        idPregunta: preguntaActiva.id_pregunta,
+        respuesta: preguntaActiva.respuesta_correcta // Siempre enviamos la correcta para probar
+      }; 
+      
+      console.log(`Enviando respuesta CORRECTA para: ${preguntaActiva.enunciado_funcion}`);
+      socket.emit('enviar-respuesta', miRespuesta);
+      
+      // Limpiamos la pregunta activa, esperando que el servidor nos envíe la siguiente
+      preguntaActiva = null; 
+    });
+  </script>
+</body>
+</html>
