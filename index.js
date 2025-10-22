@@ -4,18 +4,23 @@ const http = require('http');
 const { Server } = require('socket.io');
 const mysql = require('mysql2');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+// --- Secreto para Tokens ---
+const JWT_SECRET = 'derivaventura-2025';
 
 // --- Configuración de la Base de Datos ---
 const dbPool = mysql.createPool({
   host: '127.0.0.1',
   user: 'root',
-  password: '',
+  password: '', // ¡Recuerda poner tu contraseña si tienes una!
   database: 'derivaventura',
   port: 3306,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
-}).promise(); // Usamos .promise() en todo el pool
+}).promise(); 
 
 // --- Plantillas de Enemigos ---
 const plantillasEnemigos = [];
@@ -25,17 +30,18 @@ dbPool.query('SELECT * FROM ENEMIGOS')
     if (plantillasEnemigos.length > 0) {
       console.log(`Cargadas ${plantillasEnemigos.length} plantillas de enemigos.`);
     } else {
-      console.error('¡ADVERTENCIA! No se encontraron enemigos en la BD. El juego no funcionará.');
+      console.error('¡ADVERTENCIA! No se encontraron enemigos en la BD.');
     }
   })
   .catch(err => console.error('Error al cargar plantillas de enemigos:', err));
 
 // --- Constantes del Juego ---
 const VIDAS_INICIALES = 3;
-const POSICION_TORRE = 100; // Volvemos a 100. El juego es más justo ahora.
-const TICK_RATE_MS = 1000; // El "reloj" del juego corre 1 vez por segundo
+const POSICION_TORRE = 100;
+const TICK_RATE_MS = 1000; 
 const ACIERTOS_PARA_GANAR = 5; 
 const MAX_ZOMBIS_EN_PANTALLA = 4;
+const DURACION_CONGELACION_TICKS = 5;
 
 // --- Almacenes de Estado (El Cerebro) ---
 const gameSessions = new Map(); 
@@ -47,103 +53,272 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
-app.use(express.static(path.join(__dirname)));
 
-// --- Lógica de Socket.IO (El Corazón) ---
+// --- Middlewares de Express ---
+app.use(express.json()); // Permite a Express leer JSON
+app.use(express.static(path.join(__dirname))); // Sirve archivos (tester.html)
+
+// ===========================================
+// --- ENDPOINTS DE API REST (HTTP) ---
+// ===========================================
+
+// --- API ENDPOINTS (Registro y Login) ---
+app.post('/api/jugadores/registro', async (req, res) => {
+  try {
+    const { nombre_usuario, correo, password } = req.body;
+    if (!nombre_usuario || !correo || !password) {
+      return res.status(400).json({ mensaje: 'Faltan datos (usuario, correo, password)' });
+    }
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+    await dbPool.query(
+      'INSERT INTO JUGADORES (nombre_usuario, correo, password_hash, fecha_registro, vidas_extra) VALUES (?, ?, ?, NOW(), 0)',
+      [nombre_usuario, correo, password_hash]
+    );
+    console.log(`Nuevo jugador registrado: ${nombre_usuario}`);
+    res.status(201).json({ mensaje: '¡Usuario registrado exitosamente!' });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ mensaje: 'Error: El nombre de usuario o correo ya existe.' });
+    }
+    console.error('Error en POST /api/jugadores/registro:', error);
+    res.status(500).json({ mensaje: 'Error interno del servidor.' });
+  }
+});
+
+app.post('/api/jugadores/login', async (req, res) => {
+  try {
+    const { nombre_usuario, password } = req.body;
+    const [rows] = await dbPool.query(
+      'SELECT id_jugador, password_hash FROM JUGADORES WHERE nombre_usuario = ?',
+      [nombre_usuario]
+    );
+    if (rows.length === 0) {
+      return res.status(401).json({ mensaje: 'Usuario o contraseña incorrectos.' });
+    }
+    const jugador = rows[0];
+    const esPasswordCorrecto = await bcrypt.compare(password, jugador.password_hash);
+    if (!esPasswordCorrecto) {
+      return res.status(401).json({ mensaje: 'Usuario o contraseña incorrectos.' });
+    }
+    const token = jwt.sign(
+      { idJugador: jugador.id_jugador, nombre: nombre_usuario },
+      JWT_SECRET,
+      { expiresIn: '7d' } 
+    );
+    console.log(`Jugador ${nombre_usuario} inició sesión.`);
+    res.json({
+      mensaje: '¡Login exitoso!',
+      token: token
+    });
+  } catch (error) {
+    console.error('Error en POST /api/jugadores/login:', error);
+    res.status(500).json({ mensaje: 'Error interno del servidor.' });
+  }
+});
+
+// --- API ENDPOINTS (Preguntas Diarias) ---
+app.get('/api/preguntadiaria', async (req, res) => {
+  try {
+    const [rows] = await dbPool.query(
+      'SELECT id_pregunta_diaria, enunciado_funcion, respuesta_correcta, opcion_b, opcion_c, opcion_d FROM PREGUNTAS_DIARIAS WHERE fecha = CURDATE() LIMIT 1'
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ mensaje: 'No hay pregunta diaria disponible hoy.' });
+    }
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Error en GET /api/preguntadiaria:', error);
+    res.status(500).json({ mensaje: 'Error interno del servidor.' });
+  }
+});
+
+app.post('/api/preguntadiaria/responder', async (req, res) => {
+  try {
+    const { idPregunta, respuesta, idJugador } = req.body;
+    if (!idPregunta || !respuesta || !idJugador) {
+      return res.status(400).json({ mensaje: 'Faltan datos (idPregunta, respuesta, idJugador)' });
+    }
+    const [rows] = await dbPool.query(
+      'SELECT respuesta_correcta FROM PREGUNTAS_DIARIAS WHERE id_pregunta_diaria = ?',
+      [idPregunta]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ mensaje: 'Esa pregunta no existe.' });
+    }
+    const esCorrecta = (respuesta === rows[0].respuesta_correcta);
+    if (esCorrecta) {
+      console.log(`Jugador ${idJugador} respondió correctamente. Añadiendo 1 vida extra.`);
+      await dbPool.query(
+        'UPDATE JUGADORES SET vidas_extra = vidas_extra + 1 WHERE id_jugador = ?',
+        [idJugador]
+      );
+      res.json({ esCorrecta: true, mensaje: '¡Correcto! Has ganado 1 vida extra.' });
+    } else {
+      console.log(`Jugador ${idJugador} respondió incorrectamente.`);
+      res.json({ esCorrecta: false, mensaje: 'Respuesta incorrecta. ¡Inténtalo mañana!' });
+    }
+  } catch (error) {
+    console.error('Error en POST /api/preguntadiaria/responder:', error);
+    res.status(500).json({ mensaje: 'Error interno del servidor.' });
+  }
+});
+
+// --- API ENDPOINT (Ranking) ---
+app.get('/api/ranking', async (req, res) => {
+  try {
+    const [ranking] = await dbPool.query(
+      `SELECT J.nombre_usuario, P.puntuacion_final, P.fecha_partida
+       FROM PARTIDAS P
+       JOIN JUGADORES J ON P.id_jugador = J.id_jugador
+       ORDER BY P.puntuacion_final DESC
+       LIMIT 10`
+    );
+    console.log('Enviando ranking global.');
+    res.json(ranking);
+  } catch (error) {
+    console.error('Error en GET /api/ranking:', error);
+    res.status(500).json({ mensaje: 'Error interno del servidor.' });
+  }
+});
+
+
+// ===========================================
+// --- LÓGICA DE SOCKET.IO (Juego en Tiempo Real) ---
+// ===========================================
+
+// "Guardia" de seguridad de Socket.IO
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) return next(new Error('Error de autenticación: No hay token.'));
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    socket.jugador = payload; 
+    next(); 
+  } catch (err) {
+    return next(new Error('Error de autenticación: Token inválido.'));
+  }
+});
+
+// "El Corazón" - Manejador de conexiones de juego
 io.on('connection', (socket) => {
-  console.log(`¡Un jugador se ha conectado! ID: ${socket.id}`);
+  console.log(`¡Un jugador AUTENTICADO se ha conectado! ID: ${socket.id}, Nombre: ${socket.jugador.nombre}`);
 
-  // --- Oyente para INICIAR NIVEL (Modo Horda) ---
+  // --- Oyente para INICIAR NIVEL ---
   socket.on('iniciar-nivel', async (idNivel) => {
     try {
-      console.log(`El jugador ${socket.id} está iniciando el nivel ${idNivel}`);
+      console.log(`El jugador ${socket.jugador.nombre} está iniciando el nivel ${idNivel}`);
       
-      const [preguntas] = await dbPool.query(
-        'SELECT * FROM PREGUNTAS WHERE id_nivel = ? ORDER BY RAND()',
-        [idNivel]
-      );
-      
-      if (preguntas.length === 0) {
-        throw new Error(`No se encontraron preguntas para el nivel ${idNivel}`);
-      }
+      const [preguntas] = await dbPool.query('SELECT * FROM PREGUNTAS WHERE id_nivel = ? ORDER BY RAND()', [idNivel]);
+      if (preguntas.length === 0) throw new Error(`No se encontraron preguntas para el nivel ${idNivel}`);
 
       const nuevaSesion = {
+        idJugador: socket.jugador.idJugador, 
+        idNivel: idNivel, 
         vidas: VIDAS_INICIALES,
         puntuacion: 0,
         aciertos: 0,
-        preguntasDisponibles: preguntas, // El "mazo"
-        zombis: [], // Zombis vivos
-        preguntaActivaId: null, // ¡LA CLAVE! null = jugador está libre
-        socket: socket
+        preguntasDisponibles: preguntas,
+        zombis: [], 
+        preguntaActivaId: null, 
+        socket: socket,
+        comodines: { bombas: 1, copos: 1 },
+        freezeTimer: 0
       };
       
       gameSessions.set(socket.id, nuevaSesion);
-      console.log(`Sesión creada para ${socket.id}. Iniciando bucle de juego...`);
+      console.log(`Sesión creada para ${socket.jugador.nombre}. Iniciando bucle de juego...`);
+      
+      socket.emit('estado-juego-actualizado', {
+        vidasRestantes: nuevaSesion.vidas,
+        puntuacionActual: nuevaSesion.puntuacion,
+        aciertosActuales: nuevaSesion.aciertos,
+        comodines: nuevaSesion.comodines
+      });
       
       startGameLoop(socket.id);
 
     } catch (error) {
-      console.error(`Error al iniciar nivel para ${socket.id}:`, error.message);
+      console.error(`Error al iniciar nivel para ${socket.jugador.nombre}:`, error.message);
       socket.emit('error-juego', { mensaje: `No se pudo iniciar el nivel: ${error.message}` });
     }
   });
 
-  // --- Oyente para ENVIAR RESPUESTA (Lógica de Bloqueo) ---
+  // --- Oyente para ENVIAR RESPUESTA ---
   socket.on('enviar-respuesta', async (datos) => {
     const sesion = gameSessions.get(socket.id);
-    
-    // 1. Verificamos que el jugador tenga una sesión Y que su respuesta sea
-    //    para la pregunta que tiene "bloqueada"
-    if (!sesion || sesion.preguntaActivaId !== datos.idPregunta) {
-      console.warn(`Respuesta ignorada de ${socket.id}. (Pregunta no activa)`);
-      return; 
-    }
+    if (!sesion || sesion.preguntaActivaId !== datos.idPregunta) return; 
 
-    console.log(`El jugador ${socket.id} respondió a la pregunta ${datos.idPregunta}`);
+    console.log(`El jugador ${socket.jugador.nombre} respondió a la pregunta ${datos.idPregunta}`);
     
     const zombiIndex = sesion.zombis.findIndex(z => z.idPregunta === datos.idPregunta);
-    if (zombiIndex === -1) return; // El zombi ya murió
+    if (zombiIndex === -1) return; 
     
     const zombi = sesion.zombis[zombiIndex];
     let esCorrecta = (datos.respuesta === zombi.pregunta.respuesta_correcta);
 
     if (esCorrecta) {
-      // ¡Acierto!
       sesion.puntuacion += zombi.puntos;
       sesion.aciertos++; 
       console.log(`Respuesta CORRECTA. Aciertos: ${sesion.aciertos}/${ACIERTOS_PARA_GANAR}.`);
-      
-      // ¡Matamos al zombi!
       sesion.zombis.splice(zombiIndex, 1);
-      
     } else {
-      // ¡Fallo!
       sesion.vidas--;
       console.log(`Respuesta INCORRECTA. Vidas: ${sesion.vidas}. El zombi SIGUE VIVO.`);
-      // ¡Importante! El zombi NO muere. Sigue avanzando.
     }
     
-    // --- 2. ¡LA CLAVE! Liberamos el "bloqueo" ---
-    // Ya sea que acertó o falló, el jugador ya respondió.
-    // Ahora está libre para que el gameTick le asigne una nueva pregunta.
-    sesion.preguntaActivaId = null;
+    sesion.preguntaActivaId = null; // Liberamos el bloqueo
 
-    // 3. Avisamos al jugador del resultado
-    socket.emit('respuesta-validada', {
+    socket.emit('estado-juego-actualizado', {
       esCorrecta: esCorrecta,
       vidasRestantes: sesion.vidas,
       puntuacionActual: sesion.puntuacion,
-      aciertosActuales: sesion.aciertos
+      aciertosActuales: sesion.aciertos,
+      comodines: sesion.comodines
     });
-    
-    // El 'gameTick' se encargará de revisar si ganó o perdió
-    // y de asignarle la siguiente pregunta.
+  });
+  
+  // --- Oyente para USAR COMODÍN ---
+  socket.on('usar-comodin', (datos) => {
+    const sesion = gameSessions.get(socket.id);
+    if (!sesion) return;
+
+    const tipo = datos.tipo; 
+    console.log(`El jugador ${socket.jugador.nombre} quiere usar comodín: ${tipo}`);
+
+    if (tipo === 'bomba' && sesion.comodines.bombas > 0) {
+      sesion.comodines.bombas--;
+      sesion.zombis = [];
+      sesion.preguntaActivaId = null; 
+      
+      console.log('¡BOMBA! Todos los zombis eliminados.');
+      socket.emit('juego-limpio'); 
+      socket.emit('estado-juego-actualizado', {
+        vidasRestantes: sesion.vidas,
+        puntuacionActual: sesion.puntuacion,
+        aciertosActuales: sesion.aciertos,
+        comodines: sesion.comodines 
+      });
+
+    } else if (tipo === 'copo' && sesion.comodines.copos > 0) {
+      sesion.comodines.copos--;
+      sesion.freezeTimer = DURACION_CONGELACION_TICKS; 
+      
+      console.log(`¡CONGELADO! por ${sesion.freezeTimer} ticks.`);
+      socket.emit('juego-congelado', { duracionTicks: sesion.freezeTimer });
+      socket.emit('estado-juego-actualizado', {
+        vidasRestantes: sesion.vidas,
+        puntuacionActual: sesion.puntuacion,
+        aciertosActuales: sesion.aciertos,
+        comodines: sesion.comodines
+      });
+    }
   });
 
   // --- Oyente para DESCONEXIÓN ---
   socket.on('disconnect', () => {
     console.log(`Un jugador se ha desconectado: ${socket.id}`);
-    stopGameLoop(socket.id); // Paramos su "reloj" y limpiamos su sesión
+    stopGameLoop(socket.id, false); // No guardar score si se desconecta
   });
 });
 
@@ -156,15 +331,29 @@ function startGameLoop(socketId) {
   gameLoops.set(socketId, intervalId);
 }
 
-function stopGameLoop(socketId) {
+function stopGameLoop(socketId, guardarPuntuacion = false) {
   if (gameLoops.has(socketId)) {
     clearInterval(gameLoops.get(socketId));
     gameLoops.delete(socketId);
   }
-  if (gameSessions.has(socketId)) {
-    gameSessions.delete(socketId);
-    console.log(`Sesión y bucle de juego eliminados para ${socketId}`);
+  
+  const sesion = gameSessions.get(socketId);
+  if (!sesion) return; 
+
+  // Lógica para guardar la puntuación
+  if (guardarPuntuacion) {
+    console.log(`Guardando puntuación final para ${sesion.socket.jugador.nombre}: ${sesion.puntuacion}`);
+    
+    dbPool.query(
+      'INSERT INTO PARTIDAS (id_jugador, id_nivel, fecha_partida, puntuacion_final) VALUES (?, ?, NOW(), ?)',
+      [sesion.idJugador, sesion.idNivel, sesion.puntuacion]
+    ).catch(err => {
+      console.error('Error al guardar la puntuación:', err.message);
+    });
   }
+  
+  gameSessions.delete(socketId);
+  console.log(`Sesión y bucle de juego eliminados para ${socketId}`);
 }
 
 function gameTick(socketId) {
@@ -173,8 +362,15 @@ function gameTick(socketId) {
     stopGameLoop(socketId);
     return;
   }
+  
+  // LÓGICA DE CONGELACIÓN
+  if (sesion.freezeTimer > 0) {
+    console.log(`Juego congelado para ${sesion.socket.jugador.nombre}. Ticks restantes: ${sesion.freezeTimer}`);
+    sesion.freezeTimer--; 
+    return;
+  }
 
-  // --- 1. LÓGICA DE APARICIÓN (Horda) ---
+  // 1. LÓGICA DE APARICIÓN (Horda)
   if (sesion.zombis.length < MAX_ZOMBIS_EN_PANTALLA && sesion.preguntasDisponibles.length > 0) {
     const pregunta = sesion.preguntasDisponibles.pop();
     const plantilla = plantillasEnemigos[Math.floor(Math.random() * plantillasEnemigos.length)];
@@ -188,10 +384,10 @@ function gameTick(socketId) {
     };
     
     sesion.zombis.push(nuevoZombi);
-    console.log(`Nuevo zombi aparecido para ${socketId}. (Pregunta ${nuevoZombi.idPregunta}). Vivos: ${sesion.zombis.length}`);
+    console.log(`Nuevo zombi aparecido para ${sesion.socket.jugador.nombre}. (Pregunta ${nuevoZombi.idPregunta}). Vivos: ${sesion.zombis.length}`);
   }
 
-  // --- 2. LÓGICA DE MOVIMIENTO Y ATAQUE ---
+  // 2. LÓGICA DE MOVIMIENTO Y ATAQUE
   let zombiMasAdelantado = null;
   let maxPosicion = -1;
 
@@ -199,60 +395,50 @@ function gameTick(socketId) {
     const zombi = sesion.zombis[i];
     zombi.posicion += zombi.velocidad;
     
-    // A. ¿El zombi llegó a la torre?
     if (zombi.posicion >= POSICION_TORRE) {
       sesion.vidas--;
-      console.log(`¡Un zombi llegó! Vidas restantes: ${sesion.vidas}`);
+      console.log(`¡Un zombi llegó! Vidas restantes para ${sesion.socket.jugador.nombre}: ${sesion.vidas}`);
       
-      // ¡NUEVO! Verificamos si este zombi era la pregunta activa
       if (sesion.preguntaActivaId === zombi.idPregunta) {
-        // El jugador se tardó demasiado, liberamos el bloqueo
         sesion.preguntaActivaId = null;
       }
       
-      sesion.zombis.splice(i, 1); // Lo eliminamos del juego
+      sesion.zombis.splice(i, 1); 
       
-      sesion.socket.emit('respuesta-validada', {
-        esCorrecta: false, // Fue un fallo por tiempo
+      sesion.socket.emit('estado-juego-actualizado', {
+        esCorrecta: false, 
         vidasRestantes: sesion.vidas,
         puntuacionActual: sesion.puntuacion,
-        aciertosActuales: sesion.aciertos
+        aciertosActuales: sesion.aciertos,
+        comodines: sesion.comodines
       });
-    } 
-    // B. ¿Este zombi es el más adelantado?
-    else if (zombi.posicion > maxPosicion) {
+
+    } else if (zombi.posicion > maxPosicion) {
       maxPosicion = zombi.posicion;
       zombiMasAdelantado = zombi;
     }
   }
 
-  // --- 3. LÓGICA DE VICTORIA / DERROTA ---
+  // 3. LÓGICA DE VICTORIA / DERROTA
   if (sesion.vidas <= 0) {
-    console.log(`Juego terminado para ${socketId} (sin vidas)`);
+    console.log(`Juego terminado para ${sesion.socket.jugador.nombre} (sin vidas)`);
     sesion.socket.emit('game-over', { puntuacionFinal: sesion.puntuacion });
-    stopGameLoop(socketId);
+    stopGameLoop(socketId, true); // Guardar Puntuación = true
     return;
   }
   
   if (sesion.aciertos >= ACIERTOS_PARA_GANAR) {
-    console.log(`Nivel completado para ${socketId} (Aciertos: ${sesion.aciertos})`);
+    console.log(`Nivel completado para ${sesion.socket.jugador.nombre} (Aciertos: ${sesion.aciertos})`);
     sesion.socket.emit('nivel-completado', { puntuacionFinal: sesion.puntuacion });
-    stopGameLoop(socketId);
+    stopGameLoop(socketId, true); // Guardar Puntuación = true
     return;
   }
 
-  // --- 4. LÓGICA DE PREGUNTA ACTIVA (¡LA CLAVE!) ---
-  //
-  // Si el jugador está LIBRE (preguntaActivaId es null) Y
-  // hay un zombi en pantalla...
-  //
+  // 4. LÓGICA DE PREGUNTA ACTIVA
   if (sesion.preguntaActivaId === null && zombiMasAdelantado !== null) {
-    // ¡"Bloqueamos" a ese zombi!
     sesion.preguntaActivaId = zombiMasAdelantado.idPregunta;
+    console.log(`Nueva pregunta "bloqueada" para ${sesion.socket.jugador.nombre}: ${sesion.preguntaActivaId}`);
     
-    console.log(`Nueva pregunta "bloqueada" para ${socketId}: ${sesion.preguntaActivaId}`);
-    
-    // Enviamos la pregunta al jugador
     sesion.socket.emit('pregunta-nueva', {
       idPregunta: zombiMasAdelantado.idPregunta,
       enunciado_funcion: zombiMasAdelantado.pregunta.enunciado_funcion,
@@ -262,8 +448,6 @@ function gameTick(socketId) {
       respuesta_correcta: zombiMasAdelantado.pregunta.respuesta_correcta
     });
   }
-  // Si el jugador está ocupado (preguntaActivaId NO es null),
-  // NO HACEMOS NADA. No le cambiamos la pregunta, aunque otro zombi lo adelante.
 }
 
 // --- Iniciar el Servidor ---

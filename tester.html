@@ -3,94 +3,268 @@
 <head>
   <title>Tester de Socket.IO</title>
 </head>
-<body>
-  <h1>Probador del Backend (Versión 2.0 - Sesiones)</h1>
+<body style="font-family: sans-serif;">
+  <h1>Probador del Backend (V-FINAL - Ranking)</h1>
   <p>Abre la consola del navegador (F12) para ver los logs.</p>
   
-  <button id="testButton" style="font-size: 20px; padding: 10px;">
-    1. Probar 'iniciar-nivel' (Nivel 1)
-  </button>
+  <fieldset>
+    <legend>Paso 1: Autenticación (API REST)</legend>
+    Usuario: <input type="text" id="username" value="jugador_prueba_1">
+    Correo: <input type="text" id="email" value="test1@test.com">
+    Pass: <input type="text" id="password" value="123456">
+    <br>
+    <button id="btnRegistrar">Registrar Usuario</button>
+    <button id="btnLogin">Iniciar Sesión (Login)</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Paso 2: Conexión al Juego (Socket.IO)</legend>
+    <p>Token guardado: <span id="tokenStatus" style="color: red;">(Ninguno)</span></p>
+    <button id="btnConectarJuego">Conectar al Juego (con Token)</button>
+  </fieldset>
   
-  <button id="testRespuesta" style="font-size: 20px; padding: 10px; margin-top: 10px;">
-    2. Probar 'enviar-respuesta' (Enviar correcta)
-  </button>
+  <fieldset>
+    <legend>Paso 3: Probar el Juego (si estás conectado)</legend>
+    <button id="testIniciar">Iniciar Nivel 1</button>
+    <button id="testRespuesta">Enviar Respuesta (Correcta)</button>
+    <button id="testBomba" style="background-color: #ffcccc;">💣 Bomba</button>
+    <button id="testCopo" style="background-color: #cceeff;">❄️ Copo</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>Paso 4: Probar API (Opcional)</legend>
+    <button id="getDiaria">A. Obtener Pregunta Diaria</button>
+    <button id="postDiaria">B. Enviar Respuesta Diaria</button>
+  </fieldset>
+  
+  <fieldset>
+    <legend>Paso 5: Ver Ranking Global</legend>
+    <button id="btnRanking">Ver Ranking (Top 10)</button>
+  </fieldset>
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 
   <script>
-    // Conectamos a nuestro backend
-    const socket = io('http://localhost:3000');
-    
-    // ¡NUEVO! Aquí guardaremos la pregunta que nos mande el servidor
-    let preguntaActiva = null;
+    // --- Constantes y Variables de Estado ---
+    const ACIERTOS_PARA_GANAR = 5;
+    let socket = null; 
+    let authToken = null; 
+    let preguntaActiva = null; 
+    let preguntaDiariaActiva = null;
+    let idJugadorPrueba = null; 
+    const tokenStatus = document.getElementById('tokenStatus');
 
-    // --- OYENTES DE EVENTOS DEL SERVIDOR ---
-
-    socket.on('connect', () => {
-      console.log('¡Conectado al servidor!', socket.id);
-    });
-
-    // ¡MODIFICADO! Escuchamos la pregunta nueva
-    socket.on('pregunta-nueva', (pregunta) => {
-      console.log('%c¡PREGUNTA RECIBIDA!', 'color: blue; font-weight: bold;', pregunta.enunciado_funcion);
-      preguntaActiva = pregunta; // Guardamos la pregunta activa
-    });
-    
-    // ¡MODIFICADO! Mostramos más datos
-    socket.on('respuesta-validada', (resultado) => {
-      if (resultado.esCorrecta) {
-        console.log('%c¡RESPUESTA CORRECTA!', 'color: green; font-weight: bold;');
-      } else {
-        console.log('%c¡RESPUESTA INCORRECTA!', 'color: red; font-weight: bold;');
+    // --- Lógica de Autenticación (API REST) ---
+    document.getElementById('btnRegistrar').addEventListener('click', async () => {
+      const nombre_usuario = document.getElementById('username').value;
+      const correo = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      
+      console.log('API: Registrando usuario...');
+      try {
+        const response = await fetch('/api/jugadores/registro', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre_usuario, correo, password })
+        });
+        const resultado = await response.json();
+        if (!response.ok) throw new Error(resultado.mensaje);
+        console.log('%c¡REGISTRO EXITOSO!', 'color: green;', resultado.mensaje);
+      } catch (error) {
+        console.error('Error al registrar:', error.message);
       }
-      console.log(`Vidas restantes: ${resultado.vidasRestantes} | Puntuación: ${resultado.puntuacionActual}`);
     });
 
-    // ¡NUEVO! Escuchamos el Game Over
-    socket.on('game-over', (resultado) => {
-      console.error('¡GAME OVER!', `Puntuación final: ${resultado.puntuacionFinal}`);
-      preguntaActiva = null;
+    document.getElementById('btnLogin').addEventListener('click', async () => {
+      const nombre_usuario = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      
+      console.log('API: Iniciando sesión...');
+      try {
+        const response = await fetch('/api/jugadores/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre_usuario, password })
+        });
+        const resultado = await response.json();
+        if (!response.ok) throw new Error(resultado.mensaje);
+        
+        authToken = resultado.token; 
+        const payload = JSON.parse(atob(authToken.split('.')[1]));
+        idJugadorPrueba = payload.idJugador;
+        
+        console.log('%c¡LOGIN EXITOSO!', 'color: green;', `Token guardado para ${payload.nombre}.`);
+        tokenStatus.textContent = `(Token guardado para ${payload.nombre})`;
+        tokenStatus.style.color = 'green';
+        
+      } catch (error) {
+        console.error('Error al iniciar sesión:', error.message);
+      }
     });
-
-    // ¡NUEVO! Escuchamos el Nivel Completado
-    socket.on('nivel-completado', (resultado) => {
-      console.log('%c¡NIVEL COMPLETADO!', 'color: purple; font-weight: bold;', `Puntuación final: ${resultado.puntuacionFinal}`);
-      preguntaActiva = null;
+    
+    // --- Lógica de Conexión al Juego (Socket.IO) ---
+    document.getElementById('btnConectarJuego').addEventListener('click', () => {
+      if (!authToken) {
+        console.error('¡No hay token! Inicia sesión primero.');
+        return;
+      }
+      if (socket) {
+        socket.disconnect(); // Desconectamos si ya había uno
+      }
+      console.log('Conectando al servidor de juego (Socket.IO) con el token...');
+      socket = io('http://localhost:3000', {
+        auth: {
+          token: authToken
+        }
+      });
+      setupSocketListeners();
     });
+    
+    function setupSocketListeners() {
+      socket.on('connect', () => {
+        console.log('%c¡CONECTADO AL JUEGO!', 'color: blue; font-weight: bold;', `ID: ${socket.id}`);
+      });
+      socket.on('connect_error', (err) => {
+        console.error('Error de conexión:', err.message);
+        alert('Error al conectar: ' + err.message);
+      });
 
-    socket.on('error-juego', (error) => {
-      console.error('Error del servidor:', error.mensaje);
-    });
+      socket.on('pregunta-nueva', (pregunta) => {
+        console.log('%c¡PREGUNTA RECIBIDA!', 'color: blue; font-weight: bold;', pregunta.enunciado_funcion);
+        preguntaActiva = pregunta;
+      });
+      
+      socket.on('estado-juego-actualizado', (estado) => {
+        console.log('%c--- ESTADO ACTUALIZADO ---', 'color: purple;');
+        if (estado.esCorrecta === true) console.log('%c¡RESPUESTA CORRECTA!', 'color: green; font-weight: bold;');
+        else if (estado.esCorrecta === false) console.log('%c¡FALLO!', 'color: red; font-weight: bold;');
+        
+        console.log(`Vidas: ${estado.vidasRestantes} | Puntos: ${estado.puntuacionActual} | Aciertos: ${estado.aciertosActuales}/${ACIERTOS_PARA_GANAR}`);
+        console.log(`Comodines: ${estado.comodines.bombas} Bombas, ${estado.comodines.copos} Copos`);
+        console.log('%c--------------------------', 'color: purple;');
+      });
 
-    socket.on('disconnect', () => {
-      console.log('Desconectado del servidor');
-    });
+      socket.on('juego-limpio', () => {
+        console.log('%c¡BOOM! 💣', 'font-size: 20px; color: orange;', 'El servidor limpió los zombis.');
+        preguntaActiva = null; 
+      });
+      
+      socket.on('juego-congelado', (datos) => {
+        console.log('%c¡CONGELADO! ❄️', 'font-size: 20px; color: cyan;', `El juego se detendrá por ${datos.duracionTicks} segundos.`);
+      });
 
-    // --- OYENTES DE LOS BOTONES ---
+      socket.on('game-over', (resultado) => {
+        console.error('¡GAME OVER!', `Puntuación final: ${resultado.puntuacionFinal}`);
+        preguntaActiva = null;
+      });
 
-    document.getElementById('testButton').addEventListener('click', () => {
+      socket.on('nivel-completado', (resultado) => {
+        console.log('%c¡NIVEL COMPLETADO!', 'color: purple; font-weight: bold;', `Puntuación final: ${resultado.puntuacionFinal}`);
+        preguntaActiva = null;
+      });
+
+      socket.on('error-juego', (error) => {
+        console.error('Error del servidor:', error.mensaje);
+      });
+
+      socket.on('disconnect', () => {
+        console.log('Desconectado del servidor de juego.');
+      });
+    }
+
+    // --- OYENTES DE BOTONES (Juego Socket.IO) ---
+    document.getElementById('testIniciar').addEventListener('click', () => {
+      if (!socket) return console.warn('¡Conéctate al juego primero!');
       console.log('Enviando evento "iniciar-nivel" con ID 1...');
       socket.emit('iniciar-nivel', 1); 
     });
 
-    // ¡MODIFICADO! Este botón ahora es inteligente
     document.getElementById('testRespuesta').addEventListener('click', () => {
+      if (!socket) return console.warn('¡Conéctate al juego primero!');
       if (!preguntaActiva) {
-        console.warn('¡No hay pregunta activa! Haz clic en "Iniciar Nivel" primero.');
+        console.warn('¡No hay pregunta activa!');
         return;
       }
-      
-      // Creamos la respuesta basada en la pregunta que tenemos guardada
-      const miRespuesta = {
-        idPregunta: preguntaActiva.id_pregunta,
-        respuesta: preguntaActiva.respuesta_correcta // Siempre enviamos la correcta para probar
-      }; 
-      
+      const miRespuesta = { idPregunta: preguntaActiva.id_pregunta, respuesta: preguntaActiva.respuesta_correcta }; 
       console.log(`Enviando respuesta CORRECTA para: ${preguntaActiva.enunciado_funcion}`);
       socket.emit('enviar-respuesta', miRespuesta);
+      preguntaActiva = null;
+    });
+    
+    document.getElementById('testBomba').addEventListener('click', () => {
+      if (!socket) return console.warn('¡Conéctate al juego primero!');
+      console.log('Enviando evento "usar-comodin" - BOMBA');
+      socket.emit('usar-comodin', { tipo: 'bomba' }); 
+    });
+    
+    document.getElementById('testCopo').addEventListener('click', () => {
+      if (!socket) return console.warn('¡Conéctate al juego primero!');
+      console.log('Enviando evento "usar-comodin" - COPO');
+      socket.emit('usar-comodin', { tipo: 'copo' }); 
+    });
+
+    // --- OYENTES PARA BOTONES DE API (Pregunta Diaria) ---
+    document.getElementById('getDiaria').addEventListener('click', async () => {
+      console.log('API: Pidiendo pregunta diaria...');
+      try {
+        const response = await fetch('http://localhost:3000/api/preguntadiaria');
+        if (!response.ok) throw new Error((await response.json()).mensaje);
+        const pregunta = await response.json();
+        preguntaDiariaActiva = pregunta;
+        console.log('%c¡PREGUNTA DIARIA RECIBIDA!', 'color: green; font-weight: bold;');
+        console.log(`P: ${pregunta.enunciado_funcion}`);
+        console.log(`R: ${pregunta.respuesta_correcta}`);
+      } catch (error) {
+        console.error('Error al obtener pregunta diaria:', error.message);
+      }
+    });
+
+    document.getElementById('postDiaria').addEventListener('click', async () => {
+      if (!preguntaDiariaActiva) return console.warn('Primero "Obtener Pregunta Diaria"');
+      if (!idJugadorPrueba) return console.warn('Primero "Iniciar Sesión" para saber tu ID');
       
-      // Limpiamos la pregunta activa, esperando que el servidor nos envíe la siguiente
-      preguntaActiva = null; 
+      const miRespuesta = {
+        idPregunta: preguntaDiariaActiva.id_pregunta_diaria,
+        respuesta: preguntaDiariaActiva.respuesta_correcta, 
+        idJugador: idJugadorPrueba 
+      };
+      
+      console.log('API: Enviando respuesta diaria...', miRespuesta);
+      try {
+        const response = await fetch('http://localhost:3000/api/preguntadiaria/responder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(miRespuesta),
+        });
+        const resultado = await response.json();
+        if (!response.ok) throw new Error(resultado.mensaje);
+        console.log('%c¡RESPUESTA PROCESADA!', 'color: green; font-weight: bold;');
+        console.log(resultado.mensaje);
+      } catch (error) {
+        console.error('Error al enviar respuesta diaria:', error.message);
+      }
+    });
+    
+    // --- ¡NUEVO! OYENTE PARA BOTÓN DE RANKING ---
+    document.getElementById('btnRanking').addEventListener('click', async () => {
+      console.log('API: Pidiendo el Ranking Global...');
+      try {
+        const response = await fetch('http://localhost:3000/api/ranking');
+        if (!response.ok) throw new Error((await response.json()).mensaje);
+        
+        const ranking = await response.json();
+        
+        if (ranking.length === 0) {
+          console.log('¡El ranking está vacío! Juega una partida para llenarlo.');
+          return;
+        }
+        
+        console.log('%c¡RANKING GLOBAL (TOP 10)!', 'color: blue; font-weight: bold;');
+        console.table(ranking); // Muestra una tabla bonita
+        
+      } catch (error) {
+        console.error('Error al obtener el ranking:', error.message);
+      }
     });
   </script>
 </body>
