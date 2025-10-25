@@ -137,14 +137,14 @@ function DashboardPage() {
           </h3>
           <div className="grid md:grid-cols-2 gap-4 text-game text-lg text-white">
             <div className="space-y-2">
-              <p>🧟 Los zombies avanzan con derivadas</p>
-              <p>🎯 Resuelve correctamente para eliminarlos</p>
-              <p>💣 Bomba: elimina todos los zombies</p>
+              <p>🧟 Zombis avanzan con derivadas</p>
+              <p>🎯 Resuelve para eliminarlos</p>
+              <p>💣 Bomba: elimina 3 zombis cercanos</p>
             </div>
             <div className="space-y-2">
               <p>❄️ Copo: congela el tiempo</p>
-              <p>⭐ Consigue 5 aciertos para ganar</p>
-              <p>🏰 Defiende tu torre</p>
+              <p>🌊 Sobrevive a todas las oleadas</p>
+              <p>🏰 Defiende tu base</p>
             </div>
           </div>
         </div>

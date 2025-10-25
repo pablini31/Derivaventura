@@ -22,7 +22,7 @@ function HomePage() {
             DERIVAVENTURA
           </h1>
           <p className="text-game text-2xl md:text-3xl text-yellow-200" style={{ textShadow: '2px 2px 0px #000' }}>
-            ¡Aprende derivadas defendiendo tu torre!
+            ¡Aprende derivadas defendiendo tu base!
           </p>
         </div>
 
@@ -94,13 +94,13 @@ function HomePage() {
             ¿CÓMO JUGAR?
           </h3>
           <div className="text-game text-xl text-white space-y-2">
-            <p>🧟 Los zombies avanzan hacia tu torre con derivadas</p>
-            <p>🎯 Resuelve las derivadas correctamente para eliminarlos</p>
-            <p>💣 Usa bombas para eliminar todos los zombies</p>
-            <p>❄️ Congela el tiempo con copos de nieve</p>
-            <p>⭐ Consigue 5 aciertos para ganar el nivel</p>
-            <p>🏰 Defiende tu torre - ¡No dejes que lleguen!</p>
-            <p>📅 Desafío diario: Gana 1 vida extra al iniciar sesión</p>
+            <p>🧟 Los zombis avanzan desde la derecha con derivadas</p>
+            <p>🎯 Resuelve correctamente para eliminarlos antes de que lleguen</p>
+            <p>💣 Bomba: elimina los 3 zombis más cercanos</p>
+            <p>❄️ Copo: congela el tiempo por unos segundos</p>
+            <p>🌊 Sobrevive a todas las oleadas para ganar</p>
+            <p>🏰 Defiende tu base - ¡Solo pierdes vida si llegan!</p>
+            <p>📅 Desafío diario: Gana 1 vida extra</p>
           </div>
         </div>
 

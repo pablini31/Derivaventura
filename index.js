@@ -20,7 +20,7 @@ const dbPool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
-}).promise(); 
+}).promise();
 
 // --- Plantillas de Enemigos ---
 const plantillasEnemigos = [];
@@ -36,16 +36,142 @@ dbPool.query('SELECT * FROM ENEMIGOS')
   .catch(err => console.error('Error al cargar plantillas de enemigos:', err));
 
 // --- Constantes del Juego ---
-const VIDAS_INICIALES = 3;
+const VIDAS_INICIALES = 5;
 const POSICION_TORRE = 100;
-const TICK_RATE_MS = 1000; 
-const ACIERTOS_PARA_GANAR = 5; 
-const MAX_ZOMBIS_EN_PANTALLA = 4;
-const DURACION_CONGELACION_TICKS = 5;
+const TICK_RATE_MS = 600; // Más rápido para mejor fluidez (0.6 segundos)
+const ACIERTOS_PARA_GANAR = 15; // Más aciertos para juego más largo
+const MAX_ZOMBIS_EN_PANTALLA = 15; // Muchos más zombis simultáneos para presión
+const DURACION_CONGELACION_TICKS = 8;
+const VELOCIDAD_ZOMBI_BASE = 1; // Mucho más lento (1 unidad por tick)
+
+// Sistema de tipos de zombis con progresión como PvZ
+const TIPOS_ZOMBIS = {
+  'Zombie Normal': { dificultad: 1, probabilidad: 70, nivelMinimo: 1 },
+  'Zombie Cono': { dificultad: 2, probabilidad: 20, nivelMinimo: 1 },
+  'Zombie Cubeta': { dificultad: 3, probabilidad: 8, nivelMinimo: 2 },
+  'Zombie Futbolista': { dificultad: 4, probabilidad: 1.5, nivelMinimo: 3 },
+  'Zombie Gigante': { dificultad: 5, probabilidad: 0.5, nivelMinimo: 4 }
+};
+
+// Función para seleccionar tipo de zombi según nivel y oleada
+function seleccionarTipoZombi(nivel, oleada) {
+  const tiposDisponibles = Object.entries(TIPOS_ZOMBIS).filter(([nombre, config]) =>
+    config.nivelMinimo <= nivel
+  );
+
+  // Ajustar probabilidades según la oleada (más oleada = más zombis difíciles)
+  const probabilidadesAjustadas = tiposDisponibles.map(([nombre, config]) => {
+    let probabilidad = config.probabilidad;
+
+    // En oleadas avanzadas, aumentar probabilidad de zombis difíciles
+    if (oleada >= 3) {
+      if (config.dificultad >= 3) probabilidad *= 2;
+      if (config.dificultad <= 2) probabilidad *= 0.7;
+    }
+    if (oleada >= 5) {
+      if (config.dificultad >= 4) probabilidad *= 1.5;
+      if (config.dificultad <= 2) probabilidad *= 0.5;
+    }
+
+    return { nombre, probabilidad, config };
+  });
+
+  // Selección aleatoria ponderada
+  const totalProbabilidad = probabilidadesAjustadas.reduce((sum, item) => sum + item.probabilidad, 0);
+  let random = Math.random() * totalProbabilidad;
+
+  for (const item of probabilidadesAjustadas) {
+    random -= item.probabilidad;
+    if (random <= 0) {
+      return item.nombre;
+    }
+  }
+
+  return 'Zombie Normal'; // Fallback
+}
+
+// Función para obtener pregunta según dificultad del zombi
+function obtenerPreguntaParaZombi(tipoZombi, nivel, preguntasDisponibles) {
+  const dificultadZombi = TIPOS_ZOMBIS[tipoZombi].dificultad;
+
+  // Filtrar preguntas por dificultad del zombi
+  let preguntasFiltradas = preguntasDisponibles.filter(p => {
+    // Zombi Normal: preguntas básicas del nivel
+    if (dificultadZombi === 1) return true;
+    // Zombi Cono: preguntas del nivel actual o superior
+    if (dificultadZombi === 2) return p.id_nivel >= nivel;
+    // Zombi Cubeta: preguntas de nivel superior
+    if (dificultadZombi === 3) return p.id_nivel >= Math.min(nivel + 1, 4);
+    // Zombi Futbolista: preguntas de niveles altos
+    if (dificultadZombi === 4) return p.id_nivel >= Math.min(nivel + 1, 4);
+    // Zombi Gigante: solo preguntas del nivel más alto
+    if (dificultadZombi === 5) return p.id_nivel === 4;
+    return true;
+  });
+
+  // Si no hay preguntas filtradas, usar todas
+  if (preguntasFiltradas.length === 0) {
+    preguntasFiltradas = preguntasDisponibles;
+  }
+
+  // Seleccionar pregunta aleatoria
+  const indice = Math.floor(Math.random() * preguntasFiltradas.length);
+  const preguntaSeleccionada = preguntasFiltradas[indice];
+
+  // Remover la pregunta de ambas listas
+  const indiceOriginal = preguntasDisponibles.indexOf(preguntaSeleccionada);
+  if (indiceOriginal > -1) {
+    preguntasDisponibles.splice(indiceOriginal, 1);
+  }
+
+  return preguntaSeleccionada;
+}
+
+// Sistema de niveles con diferentes configuraciones
+const NIVELES_CONFIG = {
+  1: { // Nivel Principiante
+    nombre: "Principiante",
+    oleadas: [
+      { zombisPorOleada: 15, intervaloSpawn: 3, velocidadExtra: 0 }, // Más rápido
+      { zombisPorOleada: 20, intervaloSpawn: 2, velocidadExtra: 0 },
+      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0.5 },
+    ]
+  },
+  2: { // Nivel Intermedio
+    nombre: "Intermedio",
+    oleadas: [
+      { zombisPorOleada: 20, intervaloSpawn: 3, velocidadExtra: 0 },
+      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0 },
+      { zombisPorOleada: 30, intervaloSpawn: 2, velocidadExtra: 0.5 },
+      { zombisPorOleada: 35, intervaloSpawn: 2, velocidadExtra: 0.5 },
+    ]
+  },
+  3: { // Nivel Avanzado
+    nombre: "Avanzado",
+    oleadas: [
+      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0 },
+      { zombisPorOleada: 30, intervaloSpawn: 2, velocidadExtra: 0.5 },
+      { zombisPorOleada: 35, intervaloSpawn: 1, velocidadExtra: 0.5 },
+      { zombisPorOleada: 40, intervaloSpawn: 1, velocidadExtra: 1 },
+      { zombisPorOleada: 50, intervaloSpawn: 1, velocidadExtra: 1.5 },
+    ]
+  },
+  4: { // Nivel Experto
+    nombre: "Experto",
+    oleadas: [
+      { zombisPorOleada: 30, intervaloSpawn: 2, velocidadExtra: 0.5 },
+      { zombisPorOleada: 40, intervaloSpawn: 1, velocidadExtra: 1 },
+      { zombisPorOleada: 50, intervaloSpawn: 1, velocidadExtra: 1 },
+      { zombisPorOleada: 60, intervaloSpawn: 1, velocidadExtra: 1.5 },
+      { zombisPorOleada: 75, intervaloSpawn: 1, velocidadExtra: 2 },
+      { zombisPorOleada: 100, intervaloSpawn: 1, velocidadExtra: 2.5 },
+    ]
+  }
+};
 
 // --- Almacenes de Estado (El Cerebro) ---
-const gameSessions = new Map(); 
-const gameLoops = new Map();    
+const gameSessions = new Map();
+const gameLoops = new Map();
 
 // --- Configuración del Servidor Web ---
 const app = express();
@@ -104,7 +230,7 @@ app.post('/api/jugadores/login', async (req, res) => {
     const token = jwt.sign(
       { idJugador: jugador.id_jugador, nombre: nombre_usuario },
       JWT_SECRET,
-      { expiresIn: '7d' } 
+      { expiresIn: '7d' }
     );
     console.log(`Jugador ${nombre_usuario} inició sesión.`);
     res.json({
@@ -193,8 +319,8 @@ io.use((socket, next) => {
   if (!token) return next(new Error('Error de autenticación: No hay token.'));
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    socket.jugador = payload; 
-    next(); 
+    socket.jugador = payload;
+    next();
   } catch (err) {
     return next(new Error('Error de autenticación: Token inválido.'));
   }
@@ -208,34 +334,47 @@ io.on('connection', (socket) => {
   socket.on('iniciar-nivel', async (idNivel) => {
     try {
       console.log(`El jugador ${socket.jugador.nombre} está iniciando el nivel ${idNivel}`);
-      
+
       const [preguntas] = await dbPool.query('SELECT * FROM PREGUNTAS WHERE id_nivel = ? ORDER BY RAND()', [idNivel]);
       if (preguntas.length === 0) throw new Error(`No se encontraron preguntas para el nivel ${idNivel}`);
 
+      // Obtener configuración del nivel
+      const configNivel = NIVELES_CONFIG[idNivel];
+      if (!configNivel) throw new Error(`Configuración no encontrada para el nivel ${idNivel}`);
+
       const nuevaSesion = {
-        idJugador: socket.jugador.idJugador, 
-        idNivel: idNivel, 
+        idJugador: socket.jugador.idJugador,
+        idNivel: idNivel,
+        nombreNivel: configNivel.nombre,
+        oleadasConfig: configNivel.oleadas,
         vidas: VIDAS_INICIALES,
         puntuacion: 0,
         aciertos: 0,
         preguntasDisponibles: preguntas,
-        zombis: [], 
-        preguntaActivaId: null, 
+        zombis: [],
+        preguntaActivaId: null,
         socket: socket,
-        comodines: { bombas: 1, copos: 1 },
-        freezeTimer: 0
+        comodines: { bombas: 3, copos: 3 },
+        freezeTimer: 0,
+        // Sistema de oleadas
+        oleadaActual: 0,
+        zombisEnOleada: 0,
+        zombisSpawneadosEnOleada: 0,
+        spawnCounter: 0,
+        descansoEntreOleadas: 0,
+        oleadaCompletada: false
       };
-      
+
       gameSessions.set(socket.id, nuevaSesion);
       console.log(`Sesión creada para ${socket.jugador.nombre}. Iniciando bucle de juego...`);
-      
+
       socket.emit('estado-juego-actualizado', {
         vidasRestantes: nuevaSesion.vidas,
         puntuacionActual: nuevaSesion.puntuacion,
         aciertosActuales: nuevaSesion.aciertos,
         comodines: nuevaSesion.comodines
       });
-      
+
       startGameLoop(socket.id);
 
     } catch (error) {
@@ -247,27 +386,36 @@ io.on('connection', (socket) => {
   // --- Oyente para ENVIAR RESPUESTA ---
   socket.on('enviar-respuesta', async (datos) => {
     const sesion = gameSessions.get(socket.id);
-    if (!sesion || sesion.preguntaActivaId !== datos.idPregunta) return; 
+    if (!sesion) return;
 
     console.log(`El jugador ${socket.jugador.nombre} respondió a la pregunta ${datos.idPregunta}`);
-    
+
     const zombiIndex = sesion.zombis.findIndex(z => z.idPregunta === datos.idPregunta);
-    if (zombiIndex === -1) return; 
-    
+    if (zombiIndex === -1) return;
+
     const zombi = sesion.zombis[zombiIndex];
     let esCorrecta = (datos.respuesta === zombi.pregunta.respuesta_correcta);
 
     if (esCorrecta) {
+      // RESPUESTA CORRECTA: Eliminar zombi y ganar puntos
       sesion.puntuacion += zombi.puntos;
-      sesion.aciertos++; 
-      console.log(`Respuesta CORRECTA. Aciertos: ${sesion.aciertos}/${ACIERTOS_PARA_GANAR}.`);
+      sesion.aciertos++;
+      console.log(`¡ZOMBI ELIMINADO! Respuesta correcta. Aciertos: ${sesion.aciertos}/${ACIERTOS_PARA_GANAR}`);
       sesion.zombis.splice(zombiIndex, 1);
+
+      // Liberar pregunta activa si era este zombi
+      if (sesion.preguntaActivaId === datos.idPregunta) {
+        sesion.preguntaActivaId = null;
+      }
     } else {
-      sesion.vidas--;
-      console.log(`Respuesta INCORRECTA. Vidas: ${sesion.vidas}. El zombi SIGUE VIVO.`);
+      // RESPUESTA INCORRECTA: El zombi sigue avanzando (NO se quita vida)
+      console.log(`Respuesta incorrecta. El zombi ${datos.idPregunta} sigue avanzando...`);
+
+      // Liberar pregunta activa para permitir otra respuesta
+      if (sesion.preguntaActivaId === datos.idPregunta) {
+        sesion.preguntaActivaId = null;
+      }
     }
-    
-    sesion.preguntaActivaId = null; // Liberamos el bloqueo
 
     socket.emit('estado-juego-actualizado', {
       esCorrecta: esCorrecta,
@@ -277,33 +425,59 @@ io.on('connection', (socket) => {
       comodines: sesion.comodines
     });
   });
-  
+
   // --- Oyente para USAR COMODÍN ---
   socket.on('usar-comodin', (datos) => {
     const sesion = gameSessions.get(socket.id);
     if (!sesion) return;
 
-    const tipo = datos.tipo; 
+    const tipo = datos.tipo;
     console.log(`El jugador ${socket.jugador.nombre} quiere usar comodín: ${tipo}`);
 
     if (tipo === 'bomba' && sesion.comodines.bombas > 0) {
       sesion.comodines.bombas--;
-      sesion.zombis = [];
-      sesion.preguntaActivaId = null; 
-      
-      console.log('¡BOMBA! Todos los zombis eliminados.');
-      socket.emit('juego-limpio'); 
+
+      // Eliminar solo los 3 zombis más cercanos a la torre
+      const zombisOrdenados = sesion.zombis
+        .map((zombi, index) => ({ zombi, index }))
+        .sort((a, b) => b.zombi.posicion - a.zombi.posicion); // Ordenar por posición (más cerca = mayor posición)
+
+      const zombisAEliminar = zombisOrdenados.slice(0, 3); // Tomar los 3 más cercanos
+      let puntosGanados = 0;
+
+      // Eliminar zombis y sumar puntos
+      zombisAEliminar.forEach(({ zombi, index }) => {
+        puntosGanados += zombi.puntos;
+        sesion.aciertos++;
+
+        // Liberar pregunta activa si era uno de estos zombis
+        if (sesion.preguntaActivaId === zombi.idPregunta) {
+          sesion.preguntaActivaId = null;
+        }
+      });
+
+      // Remover zombis eliminados (en orden inverso para no afectar índices)
+      zombisAEliminar
+        .sort((a, b) => b.index - a.index)
+        .forEach(({ index }) => {
+          sesion.zombis.splice(index, 1);
+        });
+
+      sesion.puntuacion += puntosGanados;
+
+      console.log(`💣 BOMBA! Eliminados ${zombisAEliminar.length} zombis más cercanos (+${puntosGanados} puntos)`);
+      socket.emit('juego-limpio', { zombisEliminados: zombisAEliminar.length });
       socket.emit('estado-juego-actualizado', {
         vidasRestantes: sesion.vidas,
         puntuacionActual: sesion.puntuacion,
         aciertosActuales: sesion.aciertos,
-        comodines: sesion.comodines 
+        comodines: sesion.comodines
       });
 
     } else if (tipo === 'copo' && sesion.comodines.copos > 0) {
       sesion.comodines.copos--;
-      sesion.freezeTimer = DURACION_CONGELACION_TICKS; 
-      
+      sesion.freezeTimer = DURACION_CONGELACION_TICKS;
+
       console.log(`¡CONGELADO! por ${sesion.freezeTimer} ticks.`);
       socket.emit('juego-congelado', { duracionTicks: sesion.freezeTimer });
       socket.emit('estado-juego-actualizado', {
@@ -326,7 +500,7 @@ io.on('connection', (socket) => {
 
 function startGameLoop(socketId) {
   const intervalId = setInterval(() => {
-    gameTick(socketId); 
+    gameTick(socketId);
   }, TICK_RATE_MS);
   gameLoops.set(socketId, intervalId);
 }
@@ -336,14 +510,14 @@ function stopGameLoop(socketId, guardarPuntuacion = false) {
     clearInterval(gameLoops.get(socketId));
     gameLoops.delete(socketId);
   }
-  
+
   const sesion = gameSessions.get(socketId);
-  if (!sesion) return; 
+  if (!sesion) return;
 
   // Lógica para guardar la puntuación
   if (guardarPuntuacion) {
     console.log(`Guardando puntuación final para ${sesion.socket.jugador.nombre}: ${sesion.puntuacion}`);
-    
+
     dbPool.query(
       'INSERT INTO PARTIDAS (id_jugador, id_nivel, fecha_partida, puntuacion_final) VALUES (?, ?, NOW(), ?)',
       [sesion.idJugador, sesion.idNivel, sesion.puntuacion]
@@ -351,7 +525,7 @@ function stopGameLoop(socketId, guardarPuntuacion = false) {
       console.error('Error al guardar la puntuación:', err.message);
     });
   }
-  
+
   gameSessions.delete(socketId);
   console.log(`Sesión y bucle de juego eliminados para ${socketId}`);
 }
@@ -362,58 +536,131 @@ function gameTick(socketId) {
     stopGameLoop(socketId);
     return;
   }
-  
+
   // LÓGICA DE CONGELACIÓN
   if (sesion.freezeTimer > 0) {
     console.log(`Juego congelado para ${sesion.socket.jugador.nombre}. Ticks restantes: ${sesion.freezeTimer}`);
-    sesion.freezeTimer--; 
+    sesion.freezeTimer--;
     return;
   }
 
-  // 1. LÓGICA DE APARICIÓN (Horda)
-  if (sesion.zombis.length < MAX_ZOMBIS_EN_PANTALLA && sesion.preguntasDisponibles.length > 0) {
-    const pregunta = sesion.preguntasDisponibles.pop();
-    const plantilla = plantillasEnemigos[Math.floor(Math.random() * plantillasEnemigos.length)];
+  // 1. SISTEMA DE OLEADAS PROGRESIVAS (como Plants vs Zombies)
 
-    const nuevoZombi = {
-      idPregunta: pregunta.id_pregunta,
-      pregunta: pregunta,
-      velocidad: plantilla.velocidad_base,
-      puntos: plantilla.puntos_otorgados,
-      posicion: 0
-    };
-    
-    sesion.zombis.push(nuevoZombi);
-    console.log(`Nuevo zombi aparecido para ${sesion.socket.jugador.nombre}. (Pregunta ${nuevoZombi.idPregunta}). Vivos: ${sesion.zombis.length}`);
+  // INICIAR NUEVA OLEADA - ARREGLADO PARA OLEADA 2+
+  if (sesion.oleadaActual < sesion.oleadasConfig.length) {
+
+    // Si no hay oleada activa, iniciar nueva oleada (SIN REQUERIR zombis.length === 0)
+    if (sesion.zombisEnOleada === 0) {
+      if (sesion.descansoEntreOleadas <= 0) {
+        const configOleada = sesion.oleadasConfig[sesion.oleadaActual];
+        sesion.zombisEnOleada = configOleada.zombisPorOleada;
+        sesion.zombisSpawneadosEnOleada = 0;
+        sesion.spawnCounter = 0;
+        sesion.oleadaCompletada = false;
+
+        console.log(`🌊 OLEADA ${sesion.oleadaActual + 1} INICIADA - ${configOleada.zombisPorOleada} zombis (Zombis restantes en pantalla: ${sesion.zombis.length})`);
+        sesion.socket.emit('oleada-iniciada', {
+          numeroOleada: sesion.oleadaActual + 1,
+          zombisTotal: configOleada.zombisPorOleada
+        });
+      } else {
+        sesion.descansoEntreOleadas--;
+        if (sesion.descansoEntreOleadas % 2 === 0) { // Log cada 2 ticks
+          console.log(`⏳ Descanso oleada ${sesion.oleadaActual + 1}: ${sesion.descansoEntreOleadas} ticks restantes`);
+        }
+      }
+    }
   }
 
-  // 2. LÓGICA DE MOVIMIENTO Y ATAQUE
+  // SPAWN DE ZOMBIS - LÓGICA COMPLETAMENTE REESCRITA
+  if (sesion.zombisEnOleada > 0 && sesion.zombisSpawneadosEnOleada < sesion.zombisEnOleada && sesion.preguntasDisponibles.length > 0) {
+    const configOleada = sesion.oleadasConfig[sesion.oleadaActual];
+    sesion.spawnCounter++;
+
+    // SIEMPRE intentar spawnear si hay espacio y es momento
+    if (sesion.spawnCounter >= configOleada.intervaloSpawn && sesion.zombis.length < MAX_ZOMBIS_EN_PANTALLA) {
+      sesion.spawnCounter = 0; // Reset counter
+
+      console.log(`🎯 Intentando spawnear zombi ${sesion.zombisSpawneadosEnOleada + 1}/${sesion.zombisEnOleada} en oleada ${sesion.oleadaActual + 1}`);
+
+      // Seleccionar tipo de zombi según nivel y oleada
+      const tipoZombi = seleccionarTipoZombi(sesion.idNivel, sesion.oleadaActual + 1);
+      const plantilla = plantillasEnemigos.find(e => e.nombre === tipoZombi) || plantillasEnemigos[0];
+
+      // Obtener pregunta apropiada para este tipo de zombi
+      const pregunta = obtenerPreguntaParaZombi(tipoZombi, sesion.idNivel, sesion.preguntasDisponibles);
+
+      if (!pregunta) {
+        console.log(`⚠️ SIN PREGUNTAS! Forzando completar oleada ${sesion.oleadaActual + 1}. Spawneados: ${sesion.zombisSpawneadosEnOleada}/${sesion.zombisEnOleada}`);
+        // Forzar completar la oleada actual
+        sesion.zombisEnOleada = sesion.zombisSpawneadosEnOleada;
+        sesion.oleadaCompletada = true;
+        return;
+      }
+
+      const nuevoZombi = {
+        idPregunta: pregunta.id_pregunta,
+        pregunta: pregunta,
+        tipoZombi: tipoZombi,
+        velocidad: plantilla.velocidad_base + configOleada.velocidadExtra,
+        puntos: plantilla.puntos_otorgados + (sesion.oleadaActual * 5),
+        posicion: -10 // Empezar fuera de pantalla (derecha)
+      };
+
+      sesion.zombis.push(nuevoZombi);
+      sesion.zombisSpawneadosEnOleada++;
+
+      console.log(`🧟 ${tipoZombi} ${sesion.zombisSpawneadosEnOleada}/${sesion.zombisEnOleada} spawneado en oleada ${sesion.oleadaActual + 1} (Total en pantalla: ${sesion.zombis.length})`);
+    } else if (sesion.zombis.length >= MAX_ZOMBIS_EN_PANTALLA) {
+      // NO resetear counter si no hay espacio - seguir intentando
+      console.log(`⏳ Pantalla llena (${sesion.zombis.length}/${MAX_ZOMBIS_EN_PANTALLA}) - esperando espacio...`);
+    }
+  }
+
+  // COMPLETAR OLEADA - Lógica mejorada
+  if (sesion.zombisEnOleada > 0 && sesion.zombisSpawneadosEnOleada >= sesion.zombisEnOleada && sesion.zombis.length === 0 && !sesion.oleadaCompletada) {
+    sesion.oleadaCompletada = true;
+    const oleadaCompletada = sesion.oleadaActual + 1;
+
+    console.log(`✅ OLEADA ${oleadaCompletada} COMPLETADA! Spawneados: ${sesion.zombisSpawneadosEnOleada}/${sesion.zombisEnOleada}, Eliminados todos`);
+
+    // Resetear para siguiente oleada
+    sesion.zombisEnOleada = 0;
+    sesion.oleadaActual++;
+    sesion.descansoEntreOleadas = 3; // 3 ticks de descanso (1.8 segundos)
+
+    sesion.socket.emit('oleada-completada', { numeroOleada: oleadaCompletada });
+  }
+
+  // 2. LÓGICA DE MOVIMIENTO - Los zombis avanzan constantemente
   let zombiMasAdelantado = null;
   let maxPosicion = -1;
 
   for (let i = sesion.zombis.length - 1; i >= 0; i--) {
     const zombi = sesion.zombis[i];
     zombi.posicion += zombi.velocidad;
-    
+
     if (zombi.posicion >= POSICION_TORRE) {
+      // ¡ZOMBI LLEGÓ A LA BASE!
       sesion.vidas--;
-      console.log(`¡Un zombi llegó! Vidas restantes para ${sesion.socket.jugador.nombre}: ${sesion.vidas}`);
-      
+      console.log(`💀 ¡ZOMBI LLEGÓ A LA BASE! Vidas restantes: ${sesion.vidas}`);
+
       if (sesion.preguntaActivaId === zombi.idPregunta) {
         sesion.preguntaActivaId = null;
       }
-      
-      sesion.zombis.splice(i, 1); 
-      
+
+      sesion.zombis.splice(i, 1);
+
       sesion.socket.emit('estado-juego-actualizado', {
-        esCorrecta: false, 
+        esCorrecta: false,
         vidasRestantes: sesion.vidas,
         puntuacionActual: sesion.puntuacion,
         aciertosActuales: sesion.aciertos,
-        comodines: sesion.comodines
+        comodines: sesion.comodines,
+        zombiLlego: true
       });
 
-    } else if (zombi.posicion > maxPosicion) {
+    } else if (zombi.posicion > maxPosicion && zombi.posicion >= 0) { // Solo zombis visibles
       maxPosicion = zombi.posicion;
       zombiMasAdelantado = zombi;
     }
@@ -423,35 +670,71 @@ function gameTick(socketId) {
   if (sesion.vidas <= 0) {
     console.log(`Juego terminado para ${sesion.socket.jugador.nombre} (sin vidas)`);
     sesion.socket.emit('game-over', { puntuacionFinal: sesion.puntuacion });
-    stopGameLoop(socketId, true); // Guardar Puntuación = true
-    return;
-  }
-  
-  if (sesion.aciertos >= ACIERTOS_PARA_GANAR) {
-    console.log(`Nivel completado para ${sesion.socket.jugador.nombre} (Aciertos: ${sesion.aciertos})`);
-    sesion.socket.emit('nivel-completado', { puntuacionFinal: sesion.puntuacion });
-    stopGameLoop(socketId, true); // Guardar Puntuación = true
+    stopGameLoop(socketId, true);
     return;
   }
 
-  // 4. LÓGICA DE PREGUNTA ACTIVA
-  if (sesion.preguntaActivaId === null && zombiMasAdelantado !== null) {
+  // Victoria: completar todas las oleadas Y eliminar todos los zombis
+  if (sesion.oleadaActual >= sesion.oleadasConfig.length && sesion.zombis.length === 0) {
+    console.log(`¡VICTORIA! ${sesion.socket.jugador.nombre} completó el nivel ${sesion.idNivel} (${sesion.nombreNivel})`);
+    sesion.socket.emit('nivel-completado', {
+      puntuacionFinal: sesion.puntuacion,
+      oleadasCompletadas: sesion.oleadasConfig.length,
+      nombreNivel: sesion.nombreNivel
+    });
+    stopGameLoop(socketId, true);
+    return;
+  }
+
+  // 4. LÓGICA DE PREGUNTA ACTIVA - Siempre mostrar pregunta del zombi más adelantado
+  if (zombiMasAdelantado !== null && sesion.preguntaActivaId !== zombiMasAdelantado.idPregunta) {
     sesion.preguntaActivaId = zombiMasAdelantado.idPregunta;
-    console.log(`Nueva pregunta "bloqueada" para ${sesion.socket.jugador.nombre}: ${sesion.preguntaActivaId}`);
-    
+    console.log(`🎯 Nueva pregunta activa: ${sesion.preguntaActivaId} (Zombi en posición ${zombiMasAdelantado.posicion})`);
+
     sesion.socket.emit('pregunta-nueva', {
       idPregunta: zombiMasAdelantado.idPregunta,
       enunciado_funcion: zombiMasAdelantado.pregunta.enunciado_funcion,
       opcion_b: zombiMasAdelantado.pregunta.opcion_b,
       opcion_c: zombiMasAdelantado.pregunta.opcion_c,
       opcion_d: zombiMasAdelantado.pregunta.opcion_d,
-      respuesta_correcta: zombiMasAdelantado.pregunta.respuesta_correcta
+      respuesta_correcta: zombiMasAdelantado.pregunta.respuesta_correcta,
+      posicionZombi: zombiMasAdelantado.posicion // Para mostrar qué tan cerca está
     });
   }
+
+  // 5. ENVIAR ESTADO COMPLETO DEL JUEGO
+  const estadoZombis = sesion.zombis
+    .filter(z => z.posicion >= -5) // Solo mostrar zombis casi visibles
+    .map(z => ({
+      id: z.idPregunta,
+      posicion: Math.max(0, z.posicion), // No mostrar posiciones negativas en frontend
+      ecuacion: z.pregunta.enunciado_funcion,
+      velocidad: z.velocidad,
+      tipo: z.tipoZombi || 'Zombie Normal'
+    }));
+
+  // Debug info cada 10 ticks para mejor seguimiento
+  if (sesion.spawnCounter % 10 === 0 && sesion.zombisEnOleada > 0) {
+    console.log(`📊 Oleada ${sesion.oleadaActual + 1}: ${sesion.zombisSpawneadosEnOleada}/${sesion.zombisEnOleada} spawneados, ${sesion.zombis.length} en pantalla, Counter: ${sesion.spawnCounter}`);
+  }
+
+  // Debug especial para oleada 2+
+  if (sesion.oleadaActual >= 1 && sesion.zombisEnOleada > 0 && sesion.zombis.length === 0 && sesion.spawnCounter % 5 === 0) {
+    console.log(`🚨 OLEADA ${sesion.oleadaActual + 1} SIN ZOMBIS: Spawneados ${sesion.zombisSpawneadosEnOleada}/${sesion.zombisEnOleada}, Counter: ${sesion.spawnCounter}, Preguntas: ${sesion.preguntasDisponibles.length}`);
+  }
+
+  sesion.socket.emit('zombis-actualizados', {
+    zombis: estadoZombis,
+    oleadaActual: sesion.oleadaActual + 1,
+    oleadaTotal: sesion.oleadasConfig.length,
+    zombisRestantesOleada: Math.max(0, sesion.zombisEnOleada - sesion.zombisSpawneadosEnOleada),
+    descanso: sesion.descansoEntreOleadas > 0,
+    nombreNivel: sesion.nombreNivel
+  });
 }
 
 // --- Iniciar el Servidor ---
-const PORT = 3000;
+const PORT = process.env.PORT || 3001; // Cambiar a 3001 temporalmente
 server.listen(PORT, () => {
   console.log(`Servidor de Derivaventura escuchando en http://localhost:${PORT}`);
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-function ZombieCharacter({ equation = "x² + 3x", position = 0, isMoving = true }) {
+function ZombieCharacter({ equation = "x² + 3x", position = 0, isMoving = true, tipo = "Zombie Normal" }) {
   const [wobble, setWobble] = useState(0)
 
   useEffect(() => {
@@ -15,6 +15,24 @@ function ZombieCharacter({ equation = "x² + 3x", position = 0, isMoving = true 
 
   const wobbleOffset = Math.sin(wobble * Math.PI / 180) * 2
 
+  // Colores según tipo de zombi
+  const getZombieColors = (tipo) => {
+    switch(tipo) {
+      case 'Zombie Cono':
+        return { cuerpo: '#8B6E4E', cabeza: '#9B7E5E', accesorio: '🚧' }
+      case 'Zombie Cubeta':
+        return { cuerpo: '#5B6E8E', cabeza: '#6B7E9E', accesorio: '🪣' }
+      case 'Zombie Futbolista':
+        return { cuerpo: '#4E8B4E', cabeza: '#5E9B5E', accesorio: '⚽' }
+      case 'Zombie Gigante':
+        return { cuerpo: '#8B4E4E', cabeza: '#9B5E5E', accesorio: '👑' }
+      default:
+        return { cuerpo: '#6B8E9E', cabeza: '#7B9EAE', accesorio: null }
+    }
+  }
+
+  const colores = getZombieColors(tipo)
+
   return (
     <div 
       className="relative inline-block"
@@ -23,9 +41,15 @@ function ZombieCharacter({ equation = "x² + 3x", position = 0, isMoving = true 
         transition: 'transform 0.1s ease-in-out'
       }}
     >
-      {/* Ecuación flotante */}
+      {/* Ecuación flotante con color según dificultad */}
       <div 
-        className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-white border-3 border-black rounded-lg px-3 py-2 shadow-lg z-10"
+        className={`absolute -top-12 left-1/2 transform -translate-x-1/2 border-3 border-black rounded-lg px-3 py-2 shadow-lg z-10 ${
+          tipo === 'Zombie Normal' ? 'bg-white' :
+          tipo === 'Zombie Cono' ? 'bg-yellow-100' :
+          tipo === 'Zombie Cubeta' ? 'bg-blue-100' :
+          tipo === 'Zombie Futbolista' ? 'bg-green-100' :
+          'bg-red-100'
+        }`}
         style={{
           minWidth: '80px',
           animation: 'float 2s ease-in-out infinite'
@@ -60,12 +84,13 @@ function ZombieCharacter({ equation = "x² + 3x", position = 0, isMoving = true 
         viewBox="0 0 80 100" 
         xmlns="http://www.w3.org/2000/svg"
         className="drop-shadow-lg"
+        style={{ transform: 'scaleX(-1)' }} // Voltear horizontalmente para que mire hacia la izquierda
       >
         {/* Sombra */}
         <ellipse cx="40" cy="95" rx="25" ry="5" fill="rgba(0,0,0,0.3)" />
         
         {/* Cuerpo */}
-        <rect x="25" y="45" width="30" height="35" fill="#6B8E9E" rx="3" />
+        <rect x="25" y="45" width="30" height="35" fill={colores.cuerpo} rx="3" />
         
         {/* Pantalones rasgados */}
         <rect x="25" y="75" width="13" height="20" fill="#1a1a2e" />
@@ -76,19 +101,19 @@ function ZombieCharacter({ equation = "x² + 3x", position = 0, isMoving = true 
         
         {/* Brazos extendidos */}
         {/* Brazo izquierdo */}
-        <rect x="10" y="48" width="18" height="8" fill="#6B8E9E" rx="4" transform="rotate(-20 19 52)" />
-        <circle cx="10" cy="52" r="5" fill="#7B9EAE" /> {/* Mano */}
+        <rect x="10" y="48" width="18" height="8" fill={colores.cuerpo} rx="4" transform="rotate(-20 19 52)" />
+        <circle cx="10" cy="52" r="5" fill={colores.cabeza} /> {/* Mano */}
         
         {/* Brazo derecho */}
-        <rect x="52" y="48" width="18" height="8" fill="#6B8E9E" rx="4" transform="rotate(20 61 52)" />
-        <circle cx="70" cy="52" r="5" fill="#7B9EAE" /> {/* Mano */}
+        <rect x="52" y="48" width="18" height="8" fill={colores.cuerpo} rx="4" transform="rotate(20 61 52)" />
+        <circle cx="70" cy="52" r="5" fill={colores.cabeza} /> {/* Mano */}
         
         {/* Cabeza */}
-        <ellipse cx="40" cy="30" rx="18" ry="20" fill="#7B9EAE" />
+        <ellipse cx="40" cy="30" rx="18" ry="20" fill={colores.cabeza} />
         
         {/* Orejas */}
-        <ellipse cx="25" cy="30" rx="4" ry="6" fill="#6B8E9E" />
-        <ellipse cx="55" cy="30" rx="4" ry="6" fill="#6B8E9E" />
+        <ellipse cx="25" cy="30" rx="4" ry="6" fill={colores.cuerpo} />
+        <ellipse cx="55" cy="30" rx="4" ry="6" fill={colores.cuerpo} />
         
         {/* Cabello despeinado */}
         <path d="M 25 15 Q 22 12 20 15 Q 25 10 30 12 Q 35 8 40 10 Q 45 8 50 12 Q 55 10 60 15 Q 58 12 55 15" 
@@ -118,6 +143,13 @@ function ZombieCharacter({ equation = "x² + 3x", position = 0, isMoving = true 
         <ellipse cx="31" cy="95" rx="6" ry="3" fill="#1a1a2e" />
         <ellipse cx="49" cy="95" rx="6" ry="3" fill="#1a1a2e" />
       </svg>
+
+      {/* Accesorio del zombi */}
+      {colores.accesorio && (
+        <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 text-2xl">
+          {colores.accesorio}
+        </div>
+      )}
     </div>
   )
 }

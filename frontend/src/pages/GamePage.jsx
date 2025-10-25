@@ -11,7 +11,7 @@ function GamePage() {
     vidas: 5,
     puntuacion: 0,
     aciertos: 0,
-    comodines: { bombas: 1, copos: 1 }
+    comodines: { bombas: 3, copos: 3 }
   })
   const [preguntaActual, setPreguntaActual] = useState(null)
   const [gameStatus, setGameStatus] = useState('waiting') // waiting, playing, won, lost
@@ -19,7 +19,22 @@ function GamePage() {
   const [feedback, setFeedback] = useState(null)
   const [zombies, setZombies] = useState([])
   const [nivel, setNivel] = useState(1)
+  const [mostrarSeleccionNivel, setMostrarSeleccionNivel] = useState(true)
+  const [nombreNivel, setNombreNivel] = useState('Principiante')
   const [tiempoCongelado, setTiempoCongelado] = useState(false)
+  const [oleadaInfo, setOleadaInfo] = useState({
+    actual: 1,
+    total: 3,
+    zombisRestantes: 0,
+    enDescanso: false
+  })
+
+  const nivelesDisponibles = [
+    { id: 1, nombre: 'Principiante', oleadas: 3, descripcion: 'Perfecto para empezar' },
+    { id: 2, nombre: 'Intermedio', oleadas: 4, descripcion: 'Un poco más de desafío' },
+    { id: 3, nombre: 'Avanzado', oleadas: 5, descripcion: 'Para jugadores experimentados' },
+    { id: 4, nombre: 'Experto', oleadas: 6, descripcion: '¡Solo para los más valientes!' }
+  ]
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -31,7 +46,7 @@ function GamePage() {
     }
 
     // Conectar al servidor Socket.IO
-    const newSocket = io('http://localhost:3000', {
+    const newSocket = io('http://localhost:3001', {
       auth: { token }
     })
 
@@ -51,13 +66,13 @@ function GamePage() {
 
       if (data.esCorrecta !== undefined) {
         setFeedback(data.esCorrecta ? 'correct' : 'incorrect')
-        
-        // Si es correcta, eliminar el zombie más cercano
-        if (data.esCorrecta) {
-          setZombies(prev => prev.slice(1))
-        }
-        
         setTimeout(() => setFeedback(null), 1500)
+      }
+
+      // Si un zombi llegó a la base
+      if (data.zombiLlego) {
+        setFeedback('zombie-arrived')
+        setTimeout(() => setFeedback(null), 2000)
       }
     })
 
@@ -65,15 +80,40 @@ function GamePage() {
       console.log('Nueva pregunta:', pregunta)
       setPreguntaActual(pregunta)
       setSelectedAnswer(null)
+    })
+
+    // Nuevo evento para recibir estado completo del juego
+    newSocket.on('zombis-actualizados', (data) => {
+      setZombies(data.zombis.map(z => ({
+        id: z.id,
+        derivada: z.ecuacion,
+        position: (z.posicion / 100) * 85, // Convertir a porcentaje para CSS
+        speed: z.velocidad,
+        tipo: z.tipo || 'Zombie Normal'
+      })))
       
-      // Agregar nuevo zombie con la derivada
-      const newZombie = {
-        id: Date.now(),
-        derivada: pregunta.enunciado_funcion,
-        position: 0, // 0 = inicio, 100 = torre
-        speed: 1
+      setOleadaInfo({
+        actual: data.oleadaActual,
+        total: data.oleadaTotal,
+        zombisRestantes: data.zombisRestantesOleada,
+        enDescanso: data.descanso
+      })
+
+      if (data.nombreNivel) {
+        setNombreNivel(data.nombreNivel)
       }
-      setZombies(prev => [...prev, newZombie])
+    })
+
+    newSocket.on('oleada-iniciada', (data) => {
+      console.log(`Oleada ${data.numeroOleada} iniciada`)
+      setFeedback('wave-started')
+      setTimeout(() => setFeedback(null), 3000)
+    })
+
+    newSocket.on('oleada-completada', (data) => {
+      console.log(`Oleada ${data.numeroOleada} completada`)
+      setFeedback('wave-completed')
+      setTimeout(() => setFeedback(null), 3000)
     })
 
     newSocket.on('game-over', (data) => {
@@ -86,11 +126,11 @@ function GamePage() {
       setGameStatus('won')
     })
 
-    newSocket.on('juego-limpio', () => {
-      console.log('¡Bomba activada!')
-      setPreguntaActual(null)
-      // Eliminar todos los zombies
-      setZombies([])
+    newSocket.on('juego-limpio', (data) => {
+      console.log('¡Bomba activada!', data)
+      setFeedback('bomb-used')
+      setTimeout(() => setFeedback(null), 2000)
+      // Los zombis se actualizarán automáticamente con 'zombis-actualizados'
     })
 
     newSocket.on('juego-congelado', (data) => {
@@ -111,38 +151,22 @@ function GamePage() {
     }
   }, [navigate])
 
-  const iniciarNivel = () => {
+  const iniciarNivel = (nivelSeleccionado = nivel) => {
     if (socket) {
-      socket.emit('iniciar-nivel', nivel)
+      socket.emit('iniciar-nivel', nivelSeleccionado)
       setGameStatus('playing')
       setZombies([])
+      setMostrarSeleccionNivel(false)
     }
   }
 
-  // Efecto para mover zombies
-  useEffect(() => {
-    if (gameStatus !== 'playing' || tiempoCongelado) return
+  const seleccionarNivel = (nivelInfo) => {
+    setNivel(nivelInfo.id)
+    setNombreNivel(nivelInfo.nombre)
+    setOleadaInfo(prev => ({ ...prev, total: nivelInfo.oleadas }))
+  }
 
-    const interval = setInterval(() => {
-      setZombies(prev => {
-        const updated = prev.map(zombie => ({
-          ...zombie,
-          position: zombie.position + zombie.speed
-        }))
-        
-        // Verificar si algún zombie llegó a la torre (position >= 95)
-        const zombieReachedTower = updated.some(z => z.position >= 95)
-        if (zombieReachedTower && gameState.vidas > 0) {
-          // El backend manejará la pérdida de vida
-          return updated.filter(z => z.position < 95)
-        }
-        
-        return updated
-      })
-    }, 100)
-
-    return () => clearInterval(interval)
-  }, [gameStatus, gameState.vidas, tiempoCongelado])
+  // Ya no necesitamos mover zombis manualmente - el backend los maneja
 
   const enviarRespuesta = (respuesta) => {
     if (!preguntaActual || selectedAnswer !== null) return
@@ -202,14 +226,54 @@ function GamePage() {
         >
           {gameStatus === 'waiting' || gameStatus === 'connected' ? (
             <div className="flex items-center justify-center" style={{ minHeight: '500px' }}>
-              <div className="text-center">
-                <h2 className="text-pixel text-3xl text-white mb-6">
-                  ¿LISTO PARA JUGAR?
-                </h2>
-                <button onClick={iniciarNivel} className="btn-pixel-success text-xl px-8 py-4">
-                  INICIAR NIVEL {nivel}
-                </button>
-              </div>
+              {mostrarSeleccionNivel ? (
+                <div className="text-center max-w-4xl">
+                  <h2 className="text-pixel text-3xl text-white mb-8">
+                    SELECCIONA TU NIVEL
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    {nivelesDisponibles.map((nivelInfo) => (
+                      <div
+                        key={nivelInfo.id}
+                        onClick={() => seleccionarNivel(nivelInfo)}
+                        className={`card-pixel p-6 cursor-pointer transition-all hover:scale-105 ${
+                          nivel === nivelInfo.id ? 'ring-4 ring-yellow-400 bg-yellow-900/20' : ''
+                        }`}
+                      >
+                        <h3 className="text-pixel text-2xl text-yellow-400 mb-2">
+                          {nivelInfo.nombre}
+                        </h3>
+                        <p className="text-game text-lg text-white mb-2">
+                          {nivelInfo.oleadas} Oleadas
+                        </p>
+                        <p className="text-game text-sm text-gray-300">
+                          {nivelInfo.descripcion}
+                        </p>
+                        {nivel === nivelInfo.id && (
+                          <div className="mt-4">
+                            <span className="text-pixel text-sm text-green-400">✓ SELECCIONADO</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button 
+                    onClick={() => iniciarNivel(nivel)} 
+                    className="btn-pixel-success text-xl px-8 py-4"
+                  >
+                    INICIAR {nombreNivel.toUpperCase()}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center">
+                  <h2 className="text-pixel text-3xl text-white mb-6">
+                    ¿LISTO PARA JUGAR?
+                  </h2>
+                  <button onClick={() => iniciarNivel(nivel)} className="btn-pixel-success text-xl px-8 py-4">
+                    INICIAR {nombreNivel.toUpperCase()}
+                  </button>
+                </div>
+              )}
             </div>
           ) : gameStatus === 'playing' ? (
             <>
@@ -217,7 +281,7 @@ function GamePage() {
               <div className="bg-slate-900/80 border-4 border-slate-700 rounded-lg p-3 mb-4 flex flex-wrap items-center justify-between gap-3">
                 {/* Nivel */}
                 <div className="flex items-center gap-2">
-                  <span className="text-game text-lg text-white">Nivel: <span className="text-yellow-400 font-bold">{nivel}</span></span>
+                  <span className="text-game text-lg text-white">Nivel: <span className="text-yellow-400 font-bold">{nombreNivel}</span></span>
                 </div>
 
                 {/* Vidas */}
@@ -235,9 +299,34 @@ function GamePage() {
                   <span className="text-game text-lg text-white">Puntuación: <span className="text-green-400 font-bold">{gameState.puntuacion}</span></span>
                 </div>
 
-                {/* Progreso */}
+                {/* Oleada actual */}
                 <div className="flex items-center gap-2">
-                  <span className="text-game text-lg text-white">Progreso: <span className="text-blue-400 font-bold">{gameState.aciertos}/6</span></span>
+                  <span className="text-game text-lg text-white">
+                    Oleada: <span className="text-purple-400 font-bold">{oleadaInfo.actual}/{oleadaInfo.total}</span>
+                  </span>
+                  {oleadaInfo.enDescanso && (
+                    <span className="text-game text-sm text-green-400 animate-pulse">⏳ Descanso</span>
+                  )}
+                </div>
+
+                {/* Zombis activos */}
+                <div className="flex items-center gap-2">
+                  <span className="text-game text-lg text-white">
+                    Zombis: <span className="text-red-400 font-bold">{zombies.length}</span>
+                    {oleadaInfo.zombisRestantes > 0 && (
+                      <span className="text-orange-400"> (+{oleadaInfo.zombisRestantes})</span>
+                    )}
+                  </span>
+                  <div className="flex gap-1">
+                    {zombies.map((_, i) => (
+                      <div key={i} className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Progreso de aciertos */}
+                <div className="flex items-center gap-2">
+                  <span className="text-game text-lg text-white">Eliminados: <span className="text-green-400 font-bold">{gameState.aciertos}</span></span>
                 </div>
 
                 {/* Comodines */}
@@ -250,7 +339,7 @@ function GamePage() {
                         ? 'bg-red-600 border-red-800 hover:bg-red-700 text-white cursor-pointer' 
                         : 'bg-gray-600 border-gray-800 text-gray-400 cursor-not-allowed opacity-50'
                     }`}
-                    title="Bomba: Elimina todos los zombies"
+                    title="Bomba: Elimina 3 zombis cercanos"
                   >
                     <BombIcon size={16} />
                     <span className="text-game">{gameState.comodines.bombas}</span>
@@ -278,7 +367,7 @@ function GamePage() {
                 </div>
               </div>
 
-              {/* Campo de batalla - Estilo tower defense */}
+              {/* Campo de batalla - Estilo Plants vs Zombies */}
               <div className="relative bg-gradient-to-b from-sky-400 to-green-600 border-4 border-slate-700 rounded-lg overflow-hidden" style={{ height: '300px' }}>
                 {/* Sol decorativo */}
                 <div className="absolute top-4 right-8 text-6xl animate-pulse" style={{ animationDuration: '3s' }}>
@@ -288,28 +377,49 @@ function GamePage() {
                 {/* Suelo/Césped */}
                 <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-b from-green-700 to-green-800 border-t-4 border-green-900"></div>
 
-                {/* Torre del jugador (derecha) */}
-                <div className="absolute right-4 bottom-8 flex flex-col items-center z-10">
+                {/* Torre del jugador (IZQUIERDA como PvZ) */}
+                <div className="absolute left-4 bottom-8 flex flex-col items-center z-10">
                   <div className="text-6xl">🏰</div>
-                  <div className="text-game text-sm text-white bg-black/50 px-2 py-1 rounded mt-1">TORRE</div>
+                  <div className="text-game text-sm text-white bg-black/50 px-2 py-1 rounded mt-1">
+                    {localStorage.getItem('username') || 'JUGADOR'}
+                  </div>
                 </div>
 
-                {/* Zombies con derivadas */}
-                {zombies.map((zombie) => (
+                {/* Zombis - VIENEN DE LA DERECHA hacia la base (izquierda) como PvZ */}
+                {zombies.map((zombie, index) => (
                   <div
                     key={zombie.id}
-                    className="absolute bottom-8 transition-all duration-100 z-20"
+                    className="absolute bottom-8 transition-all duration-700 ease-linear z-20"
                     style={{ 
-                      left: `${zombie.position}%`,
-                      transform: 'translateX(-50%)',
-                      filter: tiempoCongelado ? 'brightness(0.5) saturate(0.5)' : 'none'
+                      right: `${Math.min(zombie.position, 85)}%`, // CAMBIO: right en lugar de left
+                      transform: 'translateX(50%)', // CAMBIO: 50% en lugar de -50%
+                      filter: tiempoCongelado ? 'brightness(0.5) saturate(0.5) hue-rotate(180deg)' : 'none',
+                      opacity: zombie.position < 5 ? zombie.position / 5 : 1, // Fade in natural
+                      zIndex: 20 + index // Zombis más nuevos aparecen encima
                     }}
                   >
                     <ZombieCharacter 
                       equation={zombie.derivada} 
                       position={zombie.position}
                       isMoving={!tiempoCongelado}
+                      tipo={zombie.tipo}
                     />
+                    {/* Barra de progreso del zombi */}
+                    <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-16 h-1 bg-gray-700 rounded">
+                      <div 
+                        className={`h-full rounded transition-all duration-700 ${
+                          zombie.position < 30 ? 'bg-green-500' :
+                          zombie.position < 60 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${Math.min(zombie.position, 100)}%` }}
+                      ></div>
+                    </div>
+                    {/* Indicador de velocidad */}
+                    {zombie.speed > 1 && (
+                      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 text-red-400 text-xs animate-pulse">
+                        ⚡ x{zombie.speed}
+                      </div>
+                    )}
                   </div>
                 ))}
 
@@ -319,6 +429,56 @@ function GamePage() {
                     <div className="text-pixel text-4xl text-white animate-pulse">
                       ❄️ CONGELADO ❄️
                     </div>
+                    {/* Efectos de nieve */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {[...Array(20)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="absolute text-white text-2xl animate-bounce"
+                          style={{
+                            left: `${Math.random() * 100}%`,
+                            top: `${Math.random() * 100}%`,
+                            animationDelay: `${Math.random() * 2}s`,
+                            animationDuration: `${1 + Math.random()}s`
+                          }}
+                        >
+                          ❄️
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Efectos especiales para feedback */}
+                {feedback === 'bomb-used' && (
+                  <div className="absolute inset-0 bg-orange-500/50 flex items-center justify-center z-30">
+                    <div className="text-pixel text-4xl text-white animate-pulse">
+                      💥 3 ZOMBIS ELIMINADOS! 💥
+                    </div>
+                  </div>
+                )}
+
+                {feedback === 'zombie-arrived' && (
+                  <div className="absolute inset-0 bg-red-500/30 flex items-center justify-center z-30">
+                    <div className="text-pixel text-4xl text-white animate-pulse shake-animation">
+                      💀 ¡ATAQUE! 💀
+                    </div>
+                  </div>
+                )}
+
+                {feedback === 'wave-started' && (
+                  <div className="absolute inset-0 bg-purple-500/40 flex items-center justify-center z-30">
+                    <div className="text-pixel text-5xl text-white animate-bounce">
+                      🌊 OLEADA {oleadaInfo.actual} 🌊
+                    </div>
+                  </div>
+                )}
+
+                {feedback === 'wave-completed' && (
+                  <div className="absolute inset-0 bg-blue-500/40 flex items-center justify-center z-30">
+                    <div className="text-pixel text-4xl text-white animate-pulse">
+                      ✅ ¡OLEADA COMPLETADA! ✅
+                    </div>
                   </div>
                 )}
               </div>
@@ -327,12 +487,22 @@ function GamePage() {
               <div className="mt-4">
                 {preguntaActual ? (
                   <div className="bg-slate-900/90 border-4 border-slate-700 rounded-lg p-4">
-                    {/* Feedback visual */}
+                    {/* Feedback visual mejorado */}
                     {feedback && (
-                      <div className={`text-center text-pixel text-2xl mb-3 ${
-                        feedback === 'correct' ? 'text-green-400' : 'text-red-400'
-                      } animate-pulse`}>
-                        {feedback === 'correct' ? '¡CORRECTO! ✓' : '¡INCORRECTO! ✗'}
+                      <div className={`text-center text-pixel text-2xl mb-3 animate-pulse ${
+                        feedback === 'correct' ? 'text-green-400' : 
+                        feedback === 'incorrect' ? 'text-yellow-400' :
+                        feedback === 'zombie-arrived' ? 'text-red-400' :
+                        feedback === 'bomb-used' ? 'text-orange-400' :
+                        feedback === 'wave-started' ? 'text-purple-400' :
+                        feedback === 'wave-completed' ? 'text-blue-400' : 'text-white'
+                      }`}>
+                        {feedback === 'correct' && '🎯 ¡ZOMBI ELIMINADO! ✓'}
+                        {feedback === 'incorrect' && '❌ ¡SIGUE INTENTANDO!'}
+                        {feedback === 'zombie-arrived' && '💀 ¡ZOMBI LLEGÓ A LA BASE!'}
+                        {feedback === 'bomb-used' && '💣 ¡3 ZOMBIS ELIMINADOS!'}
+                        {feedback === 'wave-started' && `🌊 ¡OLEADA ${oleadaInfo.actual} INICIADA!`}
+                        {feedback === 'wave-completed' && `✅ ¡OLEADA ${oleadaInfo.actual - 1} COMPLETADA!`}
                       </div>
                     )}
 
@@ -387,10 +557,13 @@ function GamePage() {
               <div className="text-center bg-green-900/50 border-4 border-green-500 rounded-xl p-8">
                 <div className="text-7xl mb-4">🏆</div>
                 <h2 className="text-pixel text-4xl text-green-400 mb-6 animate-bounce">
-                  ¡VICTORIA!
+                  ¡VICTORIA ÉPICA!
                 </h2>
                 <p className="text-game text-2xl text-white mb-4">
-                  ¡Defendiste la torre exitosamente!
+                  🧠 ¡Salvaste tus sesos de los zombis!
+                </p>
+                <p className="text-game text-lg text-green-300 mb-4">
+                  Completaste todas las oleadas del nivel {nombreNivel}
                 </p>
                 <p className="text-game text-2xl text-yellow-300 mb-8">
                   Puntuación Final: <span className="font-bold">{gameState.puntuacion}</span>
@@ -408,7 +581,7 @@ function GamePage() {
                   GAME OVER
                 </h2>
                 <p className="text-game text-2xl text-white mb-4">
-                  Los zombies destruyeron tu torre
+                  🧠 ¡Los zombis se comieron tus sesos!
                 </p>
                 <p className="text-game text-2xl text-yellow-300 mb-8">
                   Puntuación Final: <span className="font-bold">{gameState.puntuacion}</span>
