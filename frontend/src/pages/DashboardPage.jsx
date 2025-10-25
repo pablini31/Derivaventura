@@ -144,7 +144,7 @@ function DashboardPage() {
             <div className="space-y-2">
               <p>❄️ Copo: congela el tiempo</p>
               <p>🌊 Sobrevive a todas las oleadas</p>
-              <p>🏰 Defiende tu base</p>
+              <p>🏠 Defiende tu casa</p>
             </div>
           </div>
         </div>

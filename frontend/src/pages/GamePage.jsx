@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Heart, Bomb as BombIcon, Snowflake, ArrowLeft } from 'lucide-react'
+import { Heart, Bomb as BombIcon, Snowflake, ArrowLeft, Pause, Play } from 'lucide-react'
 import { io } from 'socket.io-client'
 import ZombieCharacter from '../components/ZombieCharacter'
+import HouseBase from '../components/HouseBase'
 
 function GamePage() {
   const navigate = useNavigate()
@@ -22,6 +23,9 @@ function GamePage() {
   const [mostrarSeleccionNivel, setMostrarSeleccionNivel] = useState(true)
   const [nombreNivel, setNombreNivel] = useState('Principiante')
   const [tiempoCongelado, setTiempoCongelado] = useState(false)
+  const [casaBajoAtaque, setCasaBajoAtaque] = useState(false)
+  const [modoNocturno, setModoNocturno] = useState(false)
+  const [juegoPausado, setJuegoPausado] = useState(false)
   const [oleadaInfo, setOleadaInfo] = useState({
     actual: 1,
     total: 3,
@@ -57,22 +61,39 @@ function GamePage() {
 
     newSocket.on('estado-juego-actualizado', (data) => {
       console.log('Estado actualizado:', data)
+      console.log('Comodines recibidos:', data.comodines)
       setGameState({
         vidas: data.vidasRestantes,
         puntuacion: data.puntuacionActual,
         aciertos: data.aciertosActuales,
-        comodines: data.comodines
+        comodines: data.comodines || { bombas: 3, copos: 3 }
       })
 
       if (data.esCorrecta !== undefined) {
         setFeedback(data.esCorrecta ? 'correct' : 'incorrect')
+        
+        // Sistema de comodín aleatorio basado en aciertos del backend
+        if (data.esCorrecta && data.aciertosActuales % 10 === 0 && data.aciertosActuales > 0) {
+          console.log(`🎁 Activando comodín gratis! Aciertos: ${data.aciertosActuales}`)
+          setFeedback('free-powerup')
+          // El backend manejará agregar el comodín
+          setTimeout(() => {
+            console.log('Enviando evento comodin-gratis al backend')
+            socket.emit('comodin-gratis')
+          }, 500)
+        }
+        
         setTimeout(() => setFeedback(null), 1500)
       }
 
       // Si un zombi llegó a la base
       if (data.zombiLlego) {
         setFeedback('zombie-arrived')
-        setTimeout(() => setFeedback(null), 2000)
+        setCasaBajoAtaque(true)
+        setTimeout(() => {
+          setFeedback(null)
+          setCasaBajoAtaque(false)
+        }, 2000)
       }
     })
 
@@ -98,6 +119,9 @@ function GamePage() {
         zombisRestantes: data.zombisRestantesOleada,
         enDescanso: data.descanso
       })
+
+      // Activar modo nocturno en oleadas avanzadas (3+)
+      setModoNocturno(data.oleadaActual >= 3)
 
       if (data.nombreNivel) {
         setNombreNivel(data.nombreNivel)
@@ -184,6 +208,14 @@ function GamePage() {
     }
   }
 
+  const togglePausa = () => {
+    const nuevoPausado = !juegoPausado
+    setJuegoPausado(nuevoPausado)
+    if (socket) {
+      socket.emit('pausar-juego', nuevoPausado)
+    }
+  }
+
   const salir = () => {
     if (socket) {
       socket.disconnect()
@@ -218,10 +250,13 @@ function GamePage() {
 
         {/* Contenedor principal del juego */}
         <div 
-          className="bg-gradient-to-b from-orange-900/40 to-orange-800/40 rounded-xl p-4 shadow-2xl" 
+          className={`bg-gradient-to-b from-orange-900/40 to-orange-800/40 rounded-xl p-4 shadow-2xl transition-all duration-300 ${
+            casaBajoAtaque ? 'animate-pulse' : ''
+          }`}
           style={{ 
             border: '8px solid #8B6914',
-            boxShadow: '0 0 30px rgba(139, 105, 20, 0.5), inset 0 0 20px rgba(0,0,0,0.3)'
+            boxShadow: '0 0 30px rgba(139, 105, 20, 0.5), inset 0 0 20px rgba(0,0,0,0.3)',
+            animation: casaBajoAtaque ? 'shake 0.5s ease-in-out' : 'none'
           }}
         >
           {gameStatus === 'waiting' || gameStatus === 'connected' ? (
@@ -284,12 +319,26 @@ function GamePage() {
                   <span className="text-game text-lg text-white">Nivel: <span className="text-yellow-400 font-bold">{nombreNivel}</span></span>
                 </div>
 
-                {/* Vidas */}
+                {/* Vidas con colores dinámicos */}
                 <div className="flex items-center gap-2">
-                  <span className="text-game text-lg text-white">Vidas: <span className="text-red-400 font-bold">{gameState.vidas}</span></span>
+                  <span className="text-game text-lg text-white">
+                    Vidas: <span className={`font-bold ${
+                      gameState.vidas >= 4 ? 'text-green-400' :
+                      gameState.vidas >= 2 ? 'text-yellow-400' :
+                      'text-red-400 animate-pulse'
+                    }`}>{gameState.vidas}</span>
+                  </span>
                   <div className="flex gap-1">
                     {[...Array(gameState.vidas)].map((_, i) => (
-                      <Heart key={i} className="text-red-500 fill-red-500" size={20} />
+                      <Heart 
+                        key={i} 
+                        className={`${
+                          gameState.vidas >= 4 ? 'text-green-500 fill-green-500' :
+                          gameState.vidas >= 2 ? 'text-yellow-500 fill-yellow-500' :
+                          'text-red-500 fill-red-500 animate-pulse'
+                        }`} 
+                        size={20} 
+                      />
                     ))}
                   </div>
                 </div>
@@ -299,34 +348,46 @@ function GamePage() {
                   <span className="text-game text-lg text-white">Puntuación: <span className="text-green-400 font-bold">{gameState.puntuacion}</span></span>
                 </div>
 
-                {/* Oleada actual */}
+                {/* Oleada actual - Estilo PvZ */}
                 <div className="flex items-center gap-2">
                   <span className="text-game text-lg text-white">
-                    Oleada: <span className="text-purple-400 font-bold">{oleadaInfo.actual}/{oleadaInfo.total}</span>
+                    🌊 Oleada: <span className="text-purple-400 font-bold">{oleadaInfo.actual}/{oleadaInfo.total}</span>
                   </span>
                   {oleadaInfo.enDescanso && (
-                    <span className="text-game text-sm text-green-400 animate-pulse">⏳ Descanso</span>
+                    <span className="text-game text-sm text-green-400 animate-pulse bg-green-900/30 px-2 py-1 rounded">
+                      ⏳ Preparándose...
+                    </span>
                   )}
                 </div>
 
-                {/* Zombis activos */}
+                {/* Zombis activos - Estilo PvZ */}
                 <div className="flex items-center gap-2">
                   <span className="text-game text-lg text-white">
-                    Zombis: <span className="text-red-400 font-bold">{zombies.length}</span>
+                    🧟 Activos: <span className="text-red-400 font-bold">{zombies.length}</span>
                     {oleadaInfo.zombisRestantes > 0 && (
-                      <span className="text-orange-400"> (+{oleadaInfo.zombisRestantes})</span>
+                      <span className="text-orange-400"> | Pendientes: {oleadaInfo.zombisRestantes}</span>
                     )}
                   </span>
-                  <div className="flex gap-1">
-                    {zombies.map((_, i) => (
-                      <div key={i} className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                    ))}
+                  {/* Barra de progreso de oleada */}
+                  <div className="w-20 h-2 bg-gray-700 rounded-full border border-gray-500">
+                    <div 
+                      className="h-full bg-gradient-to-r from-red-500 to-orange-500 rounded-full transition-all duration-500"
+                      style={{ 
+                        width: `${Math.max(10, (zombies.length / 15) * 100)}%` 
+                      }}
+                    ></div>
                   </div>
                 </div>
 
                 {/* Progreso de aciertos */}
                 <div className="flex items-center gap-2">
-                  <span className="text-game text-lg text-white">Eliminados: <span className="text-green-400 font-bold">{gameState.aciertos}</span></span>
+                  <span className="text-game text-lg text-white">
+                    Eliminados: <span className="text-green-400 font-bold">{gameState.aciertos}</span>
+                  </span>
+                  {/* Contador para comodín gratis */}
+                  <div className="text-game text-sm text-cyan-400">
+                    ({gameState.aciertos % 10}/10 → 🎁)
+                  </div>
                 </div>
 
                 {/* Comodines */}
@@ -358,38 +419,164 @@ function GamePage() {
                     <span className="text-game">{gameState.comodines.copos}</span>
                   </button>
                   <button
-                    className="px-3 py-2 rounded border-2 bg-gray-700 border-gray-800 text-white flex items-center gap-1 text-sm cursor-not-allowed opacity-50"
-                    disabled
-                    title="Próximamente"
+                    onClick={togglePausa}
+                    className="px-3 py-2 rounded border-2 bg-yellow-600 border-yellow-800 hover:bg-yellow-700 text-white flex items-center gap-1 text-sm cursor-pointer"
+                    title={juegoPausado ? "Reanudar juego" : "Pausar juego"}
                   >
-                    <span className="text-2xl">⏰</span>
+                    {juegoPausado ? <Play size={16} /> : <Pause size={16} />}
                   </button>
                 </div>
               </div>
 
               {/* Campo de batalla - Estilo Plants vs Zombies */}
-              <div className="relative bg-gradient-to-b from-sky-400 to-green-600 border-4 border-slate-700 rounded-lg overflow-hidden" style={{ height: '300px' }}>
-                {/* Sol decorativo */}
-                <div className="absolute top-4 right-8 text-6xl animate-pulse" style={{ animationDuration: '3s' }}>
-                  ☀️
+              <div 
+                className={`relative border-4 border-slate-700 rounded-lg overflow-hidden transition-all duration-1000 ${
+                  modoNocturno 
+                    ? 'bg-gradient-to-b from-indigo-900 via-purple-900 to-green-800' 
+                    : 'bg-gradient-to-b from-sky-400 to-green-600'
+                }`} 
+                style={{ height: '350px' }}
+              >
+                {/* Sol/Luna decorativo animado */}
+                <div 
+                  className={`absolute top-4 right-8 text-6xl transition-all duration-1000 ${
+                    modoNocturno ? 'animate-pulse' : 'animate-spin'
+                  }`}
+                  style={{ 
+                    animationDuration: modoNocturno ? '3s' : '20s',
+                    filter: modoNocturno 
+                      ? 'drop-shadow(0 0 15px rgba(200, 200, 255, 0.8))' 
+                      : 'drop-shadow(0 0 10px rgba(255, 255, 0, 0.5))'
+                  }}
+                >
+                  {modoNocturno ? '🌙' : '☀️'}
                 </div>
 
-                {/* Suelo/Césped */}
-                <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-b from-green-700 to-green-800 border-t-4 border-green-900"></div>
-
-                {/* Torre del jugador (IZQUIERDA como PvZ) */}
-                <div className="absolute left-4 bottom-8 flex flex-col items-center z-10">
-                  <div className="text-6xl">🏰</div>
-                  <div className="text-game text-sm text-white bg-black/50 px-2 py-1 rounded mt-1">
-                    {localStorage.getItem('username') || 'JUGADOR'}
+                {/* Estrellas en modo nocturno */}
+                {modoNocturno && (
+                  <div className="absolute inset-0 pointer-events-none">
+                    {[...Array(8)].map((_, i) => (
+                      <div
+                        key={`star-${i}`}
+                        className="absolute text-white animate-pulse"
+                        style={{
+                          left: `${10 + Math.random() * 80}%`,
+                          top: `${5 + Math.random() * 40}%`,
+                          animationDelay: `${Math.random() * 3}s`,
+                          animationDuration: `${2 + Math.random() * 2}s`
+                        }}
+                      >
+                        ⭐
+                      </div>
+                    ))}
                   </div>
+                )}
+
+                {/* Suelo/Césped con líneas como PvZ */}
+                <div className={`absolute bottom-0 left-0 right-0 h-32 border-t-4 transition-all duration-1000 ${
+                  modoNocturno 
+                    ? 'bg-gradient-to-b from-green-900 to-green-950 border-green-950' 
+                    : 'bg-gradient-to-b from-green-700 to-green-800 border-green-900'
+                }`}>
+                  {/* Sendero de zombis */}
+                  <div className="absolute bottom-8 left-0 right-0 h-16 bg-gradient-to-r from-yellow-800/20 via-yellow-700/30 to-yellow-800/20 border-y border-yellow-600/40"></div>
+                  
+                  {/* Líneas del césped */}
+                  <div className="absolute inset-0">
+                    {[...Array(3)].map((_, i) => (
+                      <div 
+                        key={i}
+                        className="absolute w-full border-t border-green-600 opacity-20"
+                        style={{ top: `${(i + 1) * 25}%` }}
+                      ></div>
+                    ))}
+                  </div>
+
+                  {/* Flores decorativas mejoradas - Distribución simétrica */}
+                  <div className="absolute inset-0 pointer-events-none">
+                    {/* Flores arriba del sendero - Mejor espaciado */}
+                    <div className="absolute" style={{ left: '20%', top: '15%' }}>
+                      <div className="relative">
+                        <div className="absolute w-2 h-2 bg-pink-400 rounded-full transform -translate-x-1 -translate-y-1 animate-pulse"></div>
+                        <div className="absolute w-2 h-2 bg-pink-300 rounded-full transform translate-x-1 -translate-y-1 animate-pulse"></div>
+                        <div className="absolute w-2 h-2 bg-pink-300 rounded-full transform -translate-x-1 translate-y-1 animate-pulse"></div>
+                        <div className="absolute w-2 h-2 bg-pink-400 rounded-full transform translate-x-1 translate-y-1 animate-pulse"></div>
+                        <div className="absolute w-1 h-1 bg-yellow-300 rounded-full transform translate-x-0.5 translate-y-0.5"></div>
+                        <div className="absolute w-0.5 h-3 bg-green-600 transform translate-x-1 translate-y-2"></div>
+                      </div>
+                    </div>
+                    
+                    <div className="absolute" style={{ left: '40%', top: '10%' }}>
+                      <div className="relative">
+                        <div className="absolute w-2 h-2 bg-yellow-400 rounded-full transform -translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+                        <div className="absolute w-2 h-2 bg-yellow-300 rounded-full transform translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+                        <div className="absolute w-2 h-2 bg-yellow-300 rounded-full transform -translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+                        <div className="absolute w-2 h-2 bg-yellow-400 rounded-full transform translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '0.5s' }}></div>
+                        <div className="absolute w-1 h-1 bg-orange-300 rounded-full transform translate-x-0.5 translate-y-0.5"></div>
+                        <div className="absolute w-0.5 h-3 bg-green-600 transform translate-x-1 translate-y-2"></div>
+                      </div>
+                    </div>
+                    
+                    <div className="absolute" style={{ left: '60%', top: '15%' }}>
+                      <div className="relative">
+                        <div className="absolute w-2 h-2 bg-purple-400 rounded-full transform -translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '1s' }}></div>
+                        <div className="absolute w-2 h-2 bg-purple-300 rounded-full transform translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '1s' }}></div>
+                        <div className="absolute w-2 h-2 bg-purple-300 rounded-full transform -translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '1s' }}></div>
+                        <div className="absolute w-2 h-2 bg-purple-400 rounded-full transform translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '1s' }}></div>
+                        <div className="absolute w-1 h-1 bg-white rounded-full transform translate-x-0.5 translate-y-0.5"></div>
+                        <div className="absolute w-0.5 h-3 bg-green-600 transform translate-x-1 translate-y-2"></div>
+                      </div>
+                    </div>
+                    
+                    {/* Flores abajo del sendero - Posición más alta para evitar corte */}
+                    <div className="absolute" style={{ left: '20%', bottom: '25%' }}>
+                      <div className="relative">
+                        <div className="absolute w-2 h-2 bg-blue-400 rounded-full transform -translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '1.5s' }}></div>
+                        <div className="absolute w-2 h-2 bg-blue-300 rounded-full transform translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '1.5s' }}></div>
+                        <div className="absolute w-2 h-2 bg-blue-300 rounded-full transform -translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '1.5s' }}></div>
+                        <div className="absolute w-2 h-2 bg-blue-400 rounded-full transform translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '1.5s' }}></div>
+                        <div className="absolute w-1 h-1 bg-white rounded-full transform translate-x-0.5 translate-y-0.5"></div>
+                        <div className="absolute w-0.5 h-3 bg-green-600 transform translate-x-1 translate-y-2"></div>
+                      </div>
+                    </div>
+                    
+                    <div className="absolute" style={{ left: '40%', bottom: '30%' }}>
+                      <div className="relative">
+                        <div className="absolute w-2 h-2 bg-orange-400 rounded-full transform -translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '2s' }}></div>
+                        <div className="absolute w-2 h-2 bg-orange-300 rounded-full transform translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '2s' }}></div>
+                        <div className="absolute w-2 h-2 bg-orange-300 rounded-full transform -translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '2s' }}></div>
+                        <div className="absolute w-2 h-2 bg-orange-400 rounded-full transform translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '2s' }}></div>
+                        <div className="absolute w-1 h-1 bg-red-300 rounded-full transform translate-x-0.5 translate-y-0.5"></div>
+                        <div className="absolute w-0.5 h-3 bg-green-600 transform translate-x-1 translate-y-2"></div>
+                      </div>
+                    </div>
+                    
+                    <div className="absolute" style={{ left: '60%', bottom: '25%' }}>
+                      <div className="relative">
+                        <div className="absolute w-2 h-2 bg-red-400 rounded-full transform -translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+                        <div className="absolute w-2 h-2 bg-red-300 rounded-full transform translate-x-1 -translate-y-1 animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+                        <div className="absolute w-2 h-2 bg-red-300 rounded-full transform -translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+                        <div className="absolute w-2 h-2 bg-red-400 rounded-full transform translate-x-1 translate-y-1 animate-pulse" style={{ animationDelay: '0.3s' }}></div>
+                        <div className="absolute w-1 h-1 bg-yellow-200 rounded-full transform translate-x-0.5 translate-y-0.5"></div>
+                        <div className="absolute w-0.5 h-3 bg-green-600 transform translate-x-1 translate-y-2"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Casa del jugador (IZQUIERDA como PvZ) */}
+                <div className="absolute left-4 bottom-4 z-10">
+                  <HouseBase 
+                    playerName={localStorage.getItem('username') || 'JUGADOR'}
+                    isUnderAttack={casaBajoAtaque}
+                  />
                 </div>
 
                 {/* Zombis - VIENEN DE LA DERECHA hacia la base (izquierda) como PvZ */}
                 {zombies.map((zombie, index) => (
                   <div
                     key={zombie.id}
-                    className="absolute bottom-8 transition-all duration-700 ease-linear z-20"
+                    className="absolute bottom-12 transition-all duration-700 ease-linear z-20"
                     style={{ 
                       right: `${Math.min(zombie.position, 85)}%`, // CAMBIO: right en lugar de left
                       transform: 'translateX(50%)', // CAMBIO: 50% en lugar de -50%
@@ -423,8 +610,25 @@ function GamePage() {
                   </div>
                 ))}
 
+                {/* Indicador de juego pausado */}
+                {juegoPausado && (
+                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-40">
+                    <div className="text-center">
+                      <div className="text-pixel text-6xl text-white mb-4 animate-pulse">
+                        ⏸️ PAUSADO
+                      </div>
+                      <button
+                        onClick={togglePausa}
+                        className="btn-pixel-success text-xl px-8 py-4"
+                      >
+                        ▶️ CONTINUAR
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Indicador de tiempo congelado */}
-                {tiempoCongelado && (
+                {tiempoCongelado && !juegoPausado && (
                   <div className="absolute inset-0 bg-blue-500/30 flex items-center justify-center z-30">
                     <div className="text-pixel text-4xl text-white animate-pulse">
                       ❄️ CONGELADO ❄️
@@ -455,6 +659,34 @@ function GamePage() {
                     <div className="text-pixel text-4xl text-white animate-pulse">
                       💥 3 ZOMBIS ELIMINADOS! 💥
                     </div>
+                    
+                    {/* Partículas de explosión */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {[...Array(15)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="absolute w-2 h-2 bg-orange-400 rounded-full animate-ping"
+                          style={{
+                            left: `${20 + Math.random() * 60}%`,
+                            top: `${20 + Math.random() * 60}%`,
+                            animationDelay: `${Math.random() * 0.5}s`,
+                            animationDuration: `${0.5 + Math.random() * 0.5}s`
+                          }}
+                        ></div>
+                      ))}
+                      {[...Array(10)].map((_, i) => (
+                        <div
+                          key={`spark-${i}`}
+                          className="absolute w-1 h-1 bg-yellow-300 rounded-full animate-bounce"
+                          style={{
+                            left: `${30 + Math.random() * 40}%`,
+                            top: `${30 + Math.random() * 40}%`,
+                            animationDelay: `${Math.random() * 0.3}s`,
+                            animationDuration: `${0.3 + Math.random() * 0.4}s`
+                          }}
+                        ></div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -481,6 +713,32 @@ function GamePage() {
                     </div>
                   </div>
                 )}
+
+                {feedback === 'free-powerup' && (
+                  <div className="absolute inset-0 bg-cyan-500/50 flex items-center justify-center z-30">
+                    <div className="text-pixel text-4xl text-white animate-bounce">
+                      🎁 ¡COMODÍN GRATIS! 🎁
+                    </div>
+                    
+                    {/* Partículas de regalo */}
+                    <div className="absolute inset-0 pointer-events-none">
+                      {[...Array(12)].map((_, i) => (
+                        <div
+                          key={`gift-${i}`}
+                          className="absolute text-2xl animate-ping"
+                          style={{
+                            left: `${20 + Math.random() * 60}%`,
+                            top: `${20 + Math.random() * 60}%`,
+                            animationDelay: `${Math.random() * 0.5}s`,
+                            animationDuration: `${0.8 + Math.random() * 0.4}s`
+                          }}
+                        >
+                          {['🎁', '⭐', '✨', '💎'][Math.floor(Math.random() * 4)]}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Panel de pregunta y respuestas */}
@@ -495,14 +753,20 @@ function GamePage() {
                         feedback === 'zombie-arrived' ? 'text-red-400' :
                         feedback === 'bomb-used' ? 'text-orange-400' :
                         feedback === 'wave-started' ? 'text-purple-400' :
-                        feedback === 'wave-completed' ? 'text-blue-400' : 'text-white'
+                        feedback === 'wave-completed' ? 'text-blue-400' :
+                        feedback === 'free-powerup' ? 'text-cyan-400' : 'text-white'
                       }`}>
                         {feedback === 'correct' && '🎯 ¡ZOMBI ELIMINADO! ✓'}
                         {feedback === 'incorrect' && '❌ ¡SIGUE INTENTANDO!'}
                         {feedback === 'zombie-arrived' && '💀 ¡ZOMBI LLEGÓ A LA BASE!'}
                         {feedback === 'bomb-used' && '💣 ¡3 ZOMBIS ELIMINADOS!'}
-                        {feedback === 'wave-started' && `🌊 ¡OLEADA ${oleadaInfo.actual} INICIADA!`}
+                        {feedback === 'wave-started' && (
+                  oleadaInfo.actual >= 3 
+                    ? `🌙 ¡OLEADA NOCTURNA ${oleadaInfo.actual}!` 
+                    : `🌊 ¡OLEADA ${oleadaInfo.actual} INICIADA!`
+                )}
                         {feedback === 'wave-completed' && `✅ ¡OLEADA ${oleadaInfo.actual - 1} COMPLETADA!`}
+                        {feedback === 'free-powerup' && `🎁 ¡COMODÍN GRATIS! (${gameState.aciertos} eliminados)`}
                       </div>
                     )}
 

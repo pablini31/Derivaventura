@@ -356,6 +356,7 @@ io.on('connection', (socket) => {
         socket: socket,
         comodines: { bombas: 3, copos: 3 },
         freezeTimer: 0,
+        pausado: false,
         // Sistema de oleadas
         oleadaActual: 0,
         zombisEnOleada: 0,
@@ -424,6 +425,46 @@ io.on('connection', (socket) => {
       aciertosActuales: sesion.aciertos,
       comodines: sesion.comodines
     });
+  });
+
+  // --- Oyente para COMODÍN GRATIS ---
+  socket.on('comodin-gratis', () => {
+    console.log(`🎁 Evento comodin-gratis recibido de ${socket.jugador.nombre}`);
+    const sesion = gameSessions.get(socket.id);
+    if (!sesion) {
+      console.log('❌ No se encontró sesión para comodín gratis');
+      return;
+    }
+
+    // Dar comodín aleatorio
+    const comodines = ['bomba', 'copo'];
+    const comodinAleatorio = comodines[Math.floor(Math.random() * comodines.length)];
+    
+    if (comodinAleatorio === 'bomba') {
+      sesion.comodines.bombas++;
+      console.log(`💣 Bomba agregada. Total: ${sesion.comodines.bombas}`);
+    } else {
+      sesion.comodines.copos++;
+      console.log(`❄️ Copo agregado. Total: ${sesion.comodines.copos}`);
+    }
+
+    console.log(`🎁 Comodín gratis otorgado a ${socket.jugador.nombre}: ${comodinAleatorio}`);
+    
+    socket.emit('estado-juego-actualizado', {
+      vidasRestantes: sesion.vidas,
+      puntuacionActual: sesion.puntuacion,
+      aciertosActuales: sesion.aciertos,
+      comodines: sesion.comodines
+    });
+  });
+
+  // --- Oyente para PAUSAR/REANUDAR ---
+  socket.on('pausar-juego', (pausado) => {
+    const sesion = gameSessions.get(socket.id);
+    if (!sesion) return;
+
+    sesion.pausado = pausado;
+    console.log(`🎮 Juego ${pausado ? 'pausado' : 'reanudado'} para ${socket.jugador.nombre}`);
   });
 
   // --- Oyente para USAR COMODÍN ---
@@ -535,6 +576,11 @@ function gameTick(socketId) {
   if (!sesion) {
     stopGameLoop(socketId);
     return;
+  }
+
+  // LÓGICA DE PAUSA
+  if (sesion.pausado) {
+    return; // No hacer nada si está pausado
   }
 
   // LÓGICA DE CONGELACIÓN

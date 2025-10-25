@@ -22,7 +22,7 @@ function HomePage() {
             DERIVAVENTURA
           </h1>
           <p className="text-game text-2xl md:text-3xl text-yellow-200" style={{ textShadow: '2px 2px 0px #000' }}>
-            ¡Aprende derivadas defendiendo tu base!
+            ¡Aprende derivadas defendiendo tu casa!
           </p>
         </div>
 
@@ -99,7 +99,7 @@ function HomePage() {
             <p>💣 Bomba: elimina los 3 zombis más cercanos</p>
             <p>❄️ Copo: congela el tiempo por unos segundos</p>
             <p>🌊 Sobrevive a todas las oleadas para ganar</p>
-            <p>🏰 Defiende tu base - ¡Solo pierdes vida si llegan!</p>
+            <p>🏠 Defiende tu casa - ¡Solo pierdes vida si llegan!</p>
             <p>📅 Desafío diario: Gana 1 vida extra</p>
           </div>
         </div>
