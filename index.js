@@ -127,6 +127,28 @@ function obtenerPreguntaParaZombi(tipoZombi, nivel, preguntasDisponibles) {
   return preguntaSeleccionada;
 }
 
+// Función para mezclar las opciones de respuesta aleatoriamente
+function mezclarOpciones(pregunta) {
+  // Crear array con todas las opciones
+  const opciones = [
+    { texto: pregunta.respuesta_correcta, esCorrecta: true },
+    { texto: pregunta.opcion_b, esCorrecta: false },
+    { texto: pregunta.opcion_c, esCorrecta: false },
+    { texto: pregunta.opcion_d, esCorrecta: false }
+  ];
+
+  // Algoritmo de Fisher-Yates para mezclar el array
+  for (let i = opciones.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [opciones[i], opciones[j]] = [opciones[j], opciones[i]];
+  }
+
+  return {
+    opciones: opciones.map(op => op.texto),
+    respuestaCorrecta: pregunta.respuesta_correcta // Mantener la original para verificar
+  };
+}
+
 // Sistema de niveles con diferentes configuraciones
 const NIVELES_CONFIG = {
   1: { // Nivel Principiante
@@ -252,7 +274,17 @@ app.get('/api/preguntadiaria', async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ mensaje: 'No hay pregunta diaria disponible hoy.' });
     }
-    res.json(rows[0]);
+    
+    // Mezclar las opciones aleatoriamente
+    const preguntaDiaria = rows[0];
+    const opcionesMezcladas = mezclarOpciones(preguntaDiaria);
+    
+    res.json({
+      id_pregunta_diaria: preguntaDiaria.id_pregunta_diaria,
+      enunciado_funcion: preguntaDiaria.enunciado_funcion,
+      opciones: opcionesMezcladas.opciones,
+      respuesta_correcta: opcionesMezcladas.respuestaCorrecta
+    });
   } catch (error) {
     console.error('Error en GET /api/preguntadiaria:', error);
     res.status(500).json({ mensaje: 'Error interno del servidor.' });
@@ -737,13 +769,14 @@ function gameTick(socketId) {
     sesion.preguntaActivaId = zombiMasAdelantado.idPregunta;
     console.log(`🎯 Nueva pregunta activa: ${sesion.preguntaActivaId} (Zombi en posición ${zombiMasAdelantado.posicion})`);
 
+    // Mezclar las opciones aleatoriamente
+    const opcionesMezcladas = mezclarOpciones(zombiMasAdelantado.pregunta);
+
     sesion.socket.emit('pregunta-nueva', {
       idPregunta: zombiMasAdelantado.idPregunta,
       enunciado_funcion: zombiMasAdelantado.pregunta.enunciado_funcion,
-      opcion_b: zombiMasAdelantado.pregunta.opcion_b,
-      opcion_c: zombiMasAdelantado.pregunta.opcion_c,
-      opcion_d: zombiMasAdelantado.pregunta.opcion_d,
-      respuesta_correcta: zombiMasAdelantado.pregunta.respuesta_correcta,
+      opciones: opcionesMezcladas.opciones, // Array mezclado [opcion1, opcion2, opcion3, opcion4]
+      respuesta_correcta: opcionesMezcladas.respuestaCorrecta,
       posicionZombi: zombiMasAdelantado.posicion // Para mostrar qué tan cerca está
     });
   }

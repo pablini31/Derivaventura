@@ -784,23 +784,18 @@ function GamePage() {
 
                     {/* Opciones de respuesta */}
                     <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: 'A', value: preguntaActual.respuesta_correcta },
-                        { label: 'B', value: preguntaActual.opcion_b },
-                        { label: 'C', value: preguntaActual.opcion_c },
-                        { label: 'D', value: preguntaActual.opcion_d }
-                      ].map((opcion) => (
+                      {preguntaActual.opciones && preguntaActual.opciones.map((opcion, index) => (
                         <button
-                          key={opcion.label}
-                          onClick={() => enviarRespuesta(opcion.value)}
+                          key={index}
+                          onClick={() => enviarRespuesta(opcion)}
                           disabled={selectedAnswer !== null}
                           className={`p-3 md:p-4 text-game border-3 rounded-lg transition-all ${
-                            selectedAnswer === opcion.value
+                            selectedAnswer === opcion
                               ? 'bg-blue-600 border-blue-400 scale-105'
                               : 'bg-slate-700/80 border-slate-500 hover:bg-slate-600'
                           } ${selectedAnswer !== null ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 cursor-pointer'}`}
                         >
-                          <div className="text-white text-base md:text-lg font-bold text-center">{opcion.value}</div>
+                          <div className="text-white text-base md:text-lg font-bold text-center">{opcion}</div>
                         </button>
                       ))}
                     </div>

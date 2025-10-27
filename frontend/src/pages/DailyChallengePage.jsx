@@ -142,26 +142,24 @@ function DailyChallengePage() {
 
               {/* Opciones de respuesta */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { label: 'A', value: pregunta.respuesta_correcta },
-                  { label: 'B', value: pregunta.opcion_b },
-                  { label: 'C', value: pregunta.opcion_c },
-                  { label: 'D', value: pregunta.opcion_d }
-                ].map((opcion) => (
-                  <button
-                    key={opcion.label}
-                    onClick={() => setSelectedAnswer(opcion.value)}
-                    disabled={submitted}
-                    className={`p-6 text-game text-2xl border-4 rounded-lg transition-all ${
-                      selectedAnswer === opcion.value
-                        ? 'bg-purple-600 border-purple-400 scale-105'
-                        : 'bg-slate-800/80 border-purple-700 hover:bg-purple-900/50'
-                    } ${submitted ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}`}
-                  >
-                    <span className="text-purple-300">{opcion.label}:</span>{' '}
-                    <span className="text-white">{opcion.value}</span>
-                  </button>
-                ))}
+                {pregunta.opciones && pregunta.opciones.map((opcion, index) => {
+                  const labels = ['A', 'B', 'C', 'D'];
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => setSelectedAnswer(opcion)}
+                      disabled={submitted}
+                      className={`p-6 text-game text-2xl border-4 rounded-lg transition-all ${
+                        selectedAnswer === opcion
+                          ? 'bg-purple-600 border-purple-400 scale-105'
+                          : 'bg-slate-800/80 border-purple-700 hover:bg-purple-900/50'
+                      } ${submitted ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}`}
+                    >
+                      <span className="text-purple-300">{labels[index]}:</span>{' '}
+                      <span className="text-white">{opcion}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Botón enviar */}
