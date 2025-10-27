@@ -1,8 +1,9 @@
 // --- Importaciones de las librerías ---
+// Cargar variables de entorno desde .env (si existe)
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const mysql = require('mysql2');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -10,30 +11,64 @@ const jwt = require('jsonwebtoken');
 // --- Secreto para Tokens ---
 const JWT_SECRET = 'derivaventura-2025';
 
-// --- Configuración de la Base de Datos ---
-const dbPool = mysql.createPool({
-  host: '127.0.0.1',
-  user: 'root',
-  password: '', // ¡Recuerda poner tu contraseña si tienes una!
-  database: 'derivaventura',
-  port: 3306,
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-}).promise();
+// Cliente opcional de Supabase (si config env están presentes)
+let supabase;
+try {
+  supabase = require('./backend/supabaseClient');
+} catch (err) {
+  console.warn('Supabase client no cargado (archivo no encontrado)');
+}
+
+// Decidir si usar Supabase en vez de MySQL
+const useSupabase = !!(process.env.SUPABASE_SERVICE_KEY && supabase);
+
+// Pool de MySQL solo si NO usamos Supabase
+let dbPool = null;
+if (!useSupabase) {
+  const mysql = require('mysql2');
+  dbPool = mysql.createPool({
+    host: process.env.DB_HOST || '127.0.0.1',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '', // ¡Recuerda poner tu contraseña si tienes una!
+    database: process.env.DB_NAME || 'derivaventura',
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  }).promise();
+} else {
+  console.log('Usando Supabase como proveedor de base de datos. No se creará pool MySQL.');
+}
 
 // --- Plantillas de Enemigos ---
 const plantillasEnemigos = [];
-dbPool.query('SELECT * FROM ENEMIGOS')
-  .then(([rows]) => {
-    plantillasEnemigos.push(...rows);
-    if (plantillasEnemigos.length > 0) {
-      console.log(`Cargadas ${plantillasEnemigos.length} plantillas de enemigos.`);
+if (process.env.SUPABASE_SERVICE_KEY && supabase) {
+  // Cargar enemigos desde Supabase
+  (async () => {
+    const { data, error } = await supabase.from('enemigos').select('*');
+    if (error) {
+      console.error('Error al cargar plantillas de enemigos desde Supabase:', error);
     } else {
-      console.error('¡ADVERTENCIA! No se encontraron enemigos en la BD.');
+      plantillasEnemigos.push(...(data || []));
+      if (plantillasEnemigos.length > 0) {
+        console.log(`Cargadas ${plantillasEnemigos.length} plantillas de enemigos (Supabase).`);
+      } else {
+        console.error('¡ADVERTENCIA! No se encontraron enemigos en Supabase.');
+      }
     }
-  })
-  .catch(err => console.error('Error al cargar plantillas de enemigos:', err));
+  })();
+} else {
+  dbPool.query('SELECT * FROM ENEMIGOS')
+    .then(([rows]) => {
+      plantillasEnemigos.push(...rows);
+      if (plantillasEnemigos.length > 0) {
+        console.log(`Cargadas ${plantillasEnemigos.length} plantillas de enemigos.`);
+      } else {
+        console.error('¡ADVERTENCIA! No se encontraron enemigos en la BD.');
+      }
+    })
+    .catch(err => console.error('Error al cargar plantillas de enemigos:', err));
+}
 
 // --- Constantes del Juego ---
 const VIDAS_INICIALES = 5;
@@ -219,10 +254,25 @@ app.post('/api/jugadores/registro', async (req, res) => {
     }
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
-    await dbPool.query(
-      'INSERT INTO JUGADORES (nombre_usuario, correo, password_hash, fecha_registro, vidas_extra) VALUES (?, ?, ?, NOW(), 0)',
-      [nombre_usuario, correo, password_hash]
-    );
+    if (process.env.SUPABASE_SERVICE_KEY && supabase) {
+      // Usar Supabase
+      const { data, error } = await supabase
+        .from('jugadores')
+        .insert([{ nombre_usuario, correo, password_hash, vidas_extra: 0 }]);
+      if (error) {
+        // Detección simple de duplicado
+        if (error.code === '23505' || /duplicate/i.test(error.message || '')) {
+          return res.status(409).json({ mensaje: 'Error: El nombre de usuario o correo ya existe.' });
+        }
+        console.error('Supabase insert error:', error);
+        return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+      }
+    } else {
+      await dbPool.query(
+        'INSERT INTO JUGADORES (nombre_usuario, correo, password_hash, fecha_registro, vidas_extra) VALUES (?, ?, ?, NOW(), 0)',
+        [nombre_usuario, correo, password_hash]
+      );
+    }
     console.log(`Nuevo jugador registrado: ${nombre_usuario}`);
     res.status(201).json({ mensaje: '¡Usuario registrado exitosamente!' });
   } catch (error) {
@@ -237,14 +287,30 @@ app.post('/api/jugadores/registro', async (req, res) => {
 app.post('/api/jugadores/login', async (req, res) => {
   try {
     const { nombre_usuario, password } = req.body;
-    const [rows] = await dbPool.query(
-      'SELECT id_jugador, password_hash FROM JUGADORES WHERE nombre_usuario = ?',
-      [nombre_usuario]
-    );
-    if (rows.length === 0) {
-      return res.status(401).json({ mensaje: 'Usuario o contraseña incorrectos.' });
+    let jugador;
+    if (process.env.SUPABASE_SERVICE_KEY && supabase) {
+      const { data, error } = await supabase
+        .from('jugadores')
+        .select('id_jugador, password_hash')
+        .eq('nombre_usuario', nombre_usuario)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error('Supabase select error (login):', error);
+        return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+      }
+      jugador = data;
+      if (!jugador) return res.status(401).json({ mensaje: 'Usuario o contraseña incorrectos.' });
+    } else {
+      const [rows] = await dbPool.query(
+        'SELECT id_jugador, password_hash FROM JUGADORES WHERE nombre_usuario = ?',
+        [nombre_usuario]
+      );
+      if (rows.length === 0) {
+        return res.status(401).json({ mensaje: 'Usuario o contraseña incorrectos.' });
+      }
+      jugador = rows[0];
     }
-    const jugador = rows[0];
     const esPasswordCorrecto = await bcrypt.compare(password, jugador.password_hash);
     if (!esPasswordCorrecto) {
       return res.status(401).json({ mensaje: 'Usuario o contraseña incorrectos.' });
@@ -268,15 +334,34 @@ app.post('/api/jugadores/login', async (req, res) => {
 // --- API ENDPOINTS (Preguntas Diarias) ---
 app.get('/api/preguntadiaria', async (req, res) => {
   try {
-    const [rows] = await dbPool.query(
-      'SELECT id_pregunta_diaria, enunciado_funcion, respuesta_correcta, opcion_b, opcion_c, opcion_d FROM PREGUNTAS_DIARIAS WHERE fecha = CURDATE() LIMIT 1'
-    );
-    if (rows.length === 0) {
+    let preguntaDiaria;
+    if (process.env.SUPABASE_SERVICE_KEY && supabase) {
+      const today = new Date().toISOString().slice(0,10);
+      const { data, error } = await supabase
+        .from('preguntas_diarias')
+        .select('id_pregunta_diaria, enunciado_funcion, respuesta_correcta, opcion_b, opcion_c, opcion_d')
+        .eq('fecha', today)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error('Supabase select error (preguntadiaria):', error);
+        return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+      }
+      preguntaDiaria = data;
+    } else {
+      const [rows] = await dbPool.query(
+        'SELECT id_pregunta_diaria, enunciado_funcion, respuesta_correcta, opcion_b, opcion_c, opcion_d FROM PREGUNTAS_DIARIAS WHERE fecha = CURDATE() LIMIT 1'
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ mensaje: 'No hay pregunta diaria disponible hoy.' });
+      }
+      preguntaDiaria = rows[0];
+    }
+    if (!preguntaDiaria) {
       return res.status(404).json({ mensaje: 'No hay pregunta diaria disponible hoy.' });
     }
-    
     // Mezclar las opciones aleatoriamente
-    const preguntaDiaria = rows[0];
+    
     const opcionesMezcladas = mezclarOpciones(preguntaDiaria);
     
     res.json({
@@ -297,24 +382,74 @@ app.post('/api/preguntadiaria/responder', async (req, res) => {
     if (!idPregunta || !respuesta || !idJugador) {
       return res.status(400).json({ mensaje: 'Faltan datos (idPregunta, respuesta, idJugador)' });
     }
-    const [rows] = await dbPool.query(
-      'SELECT respuesta_correcta FROM PREGUNTAS_DIARIAS WHERE id_pregunta_diaria = ?',
-      [idPregunta]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ mensaje: 'Esa pregunta no existe.' });
-    }
-    const esCorrecta = (respuesta === rows[0].respuesta_correcta);
-    if (esCorrecta) {
-      console.log(`Jugador ${idJugador} respondió correctamente. Añadiendo 1 vida extra.`);
-      await dbPool.query(
-        'UPDATE JUGADORES SET vidas_extra = vidas_extra + 1 WHERE id_jugador = ?',
-        [idJugador]
-      );
-      res.json({ esCorrecta: true, mensaje: '¡Correcto! Has ganado 1 vida extra.' });
+    let preguntaRow;
+    if (useSupabase) {
+      const { data, error } = await supabase
+        .from('preguntas_diarias')
+        .select('respuesta_correcta')
+        .eq('id_pregunta_diaria', idPregunta)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error('Supabase select error (responder initial):', error);
+        return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+      }
+      if (!data) return res.status(404).json({ mensaje: 'Esa pregunta no existe.' });
+      preguntaRow = data;
     } else {
-      console.log(`Jugador ${idJugador} respondió incorrectamente.`);
-      res.json({ esCorrecta: false, mensaje: 'Respuesta incorrecta. ¡Inténtalo mañana!' });
+      const [rows] = await dbPool.query(
+        'SELECT respuesta_correcta FROM PREGUNTAS_DIARIAS WHERE id_pregunta_diaria = ?',
+        [idPregunta]
+      );
+      if (rows.length === 0) {
+        return res.status(404).json({ mensaje: 'Esa pregunta no existe.' });
+      }
+      preguntaRow = rows[0];
+    }
+    // Versión compatible con Supabase o MySQL
+    let esCorrecta;
+    if (useSupabase) {
+      esCorrecta = (respuesta === preguntaRow.respuesta_correcta);
+      if (esCorrecta) {
+        // Obtener vidas actuales y actualizar +1
+        const { data: jugadorData, error: jErr } = await supabase
+          .from('jugadores')
+          .select('vidas_extra')
+          .eq('id_jugador', idJugador)
+          .limit(1)
+          .maybeSingle();
+        if (jErr) {
+          console.error('Supabase select error (jugador):', jErr);
+          return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+        }
+        const nuevasVidas = ((jugadorData && jugadorData.vidas_extra) || 0) + 1;
+        const { error: updErr } = await supabase
+          .from('jugadores')
+          .update({ vidas_extra: nuevasVidas })
+          .eq('id_jugador', idJugador);
+        if (updErr) {
+          console.error('Supabase update error (vidas):', updErr);
+          return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+        }
+        console.log(`Jugador ${idJugador} respondió correctamente. Añadiendo 1 vida extra.`);
+        return res.json({ esCorrecta: true, mensaje: '¡Correcto! Has ganado 1 vida extra.' });
+      } else {
+        console.log(`Jugador ${idJugador} respondió incorrectamente.`);
+        return res.json({ esCorrecta: false, mensaje: 'Respuesta incorrecta. ¡Inténtalo mañana!' });
+      }
+    } else {
+      const esCorrectaLocal = (respuesta === preguntaRow.respuesta_correcta);
+      if (esCorrectaLocal) {
+        console.log(`Jugador ${idJugador} respondió correctamente. Añadiendo 1 vida extra.`);
+        await dbPool.query(
+          'UPDATE JUGADORES SET vidas_extra = vidas_extra + 1 WHERE id_jugador = ?',
+          [idJugador]
+        );
+        res.json({ esCorrecta: true, mensaje: '¡Correcto! Has ganado 1 vida extra.' });
+      } else {
+        console.log(`Jugador ${idJugador} respondió incorrectamente.`);
+        res.json({ esCorrecta: false, mensaje: 'Respuesta incorrecta. ¡Inténtalo mañana!' });
+      }
     }
   } catch (error) {
     console.error('Error en POST /api/preguntadiaria/responder:', error);
@@ -325,15 +460,48 @@ app.post('/api/preguntadiaria/responder', async (req, res) => {
 // --- API ENDPOINT (Ranking) ---
 app.get('/api/ranking', async (req, res) => {
   try {
-    const [ranking] = await dbPool.query(
-      `SELECT J.nombre_usuario, P.puntuacion_final, P.fecha_partida
-       FROM PARTIDAS P
-       JOIN JUGADORES J ON P.id_jugador = J.id_jugador
-       ORDER BY P.puntuacion_final DESC
-       LIMIT 10`
-    );
-    console.log('Enviando ranking global.');
-    res.json(ranking);
+    if (useSupabase) {
+      // Obtener top 10 partidas y mapear nombres de jugadores
+      const { data: partidas, error: pErr } = await supabase
+        .from('partidas')
+        .select('id_jugador, puntuacion_final, fecha_partida')
+        .order('puntuacion_final', { ascending: false })
+        .limit(10);
+      if (pErr) {
+        console.error('Supabase select error (ranking partidas):', pErr);
+        return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+      }
+      const ids = partidas.map(p => p.id_jugador).filter(Boolean);
+      let jugadoresMap = {};
+      if (ids.length > 0) {
+        const { data: jugadores, error: jErr } = await supabase
+          .from('jugadores')
+          .select('id_jugador, nombre_usuario')
+          .in('id_jugador', ids);
+        if (jErr) {
+          console.error('Supabase select error (ranking jugadores):', jErr);
+          return res.status(500).json({ mensaje: 'Error interno del servidor.' });
+        }
+        jugadoresMap = (jugadores || []).reduce((acc, j) => { acc[j.id_jugador] = j.nombre_usuario; return acc; }, {});
+      }
+      const ranking = (partidas || []).map(p => ({
+        nombre_usuario: jugadoresMap[p.id_jugador] || 'Desconocido',
+        puntuacion_final: p.puntuacion_final,
+        fecha_partida: p.fecha_partida
+      }));
+      console.log('Enviando ranking global (Supabase).');
+      return res.json(ranking);
+    } else {
+      const [ranking] = await dbPool.query(
+        `SELECT J.nombre_usuario, P.puntuacion_final, P.fecha_partida
+         FROM PARTIDAS P
+         JOIN JUGADORES J ON P.id_jugador = J.id_jugador
+         ORDER BY P.puntuacion_final DESC
+         LIMIT 10`
+      );
+      console.log('Enviando ranking global.');
+      res.json(ranking);
+    }
   } catch (error) {
     console.error('Error en GET /api/ranking:', error);
     res.status(500).json({ mensaje: 'Error interno del servidor.' });
@@ -367,8 +535,21 @@ io.on('connection', (socket) => {
     try {
       console.log(`El jugador ${socket.jugador.nombre} está iniciando el nivel ${idNivel}`);
 
-      const [preguntas] = await dbPool.query('SELECT * FROM PREGUNTAS WHERE id_nivel = ? ORDER BY RAND()', [idNivel]);
-      if (preguntas.length === 0) throw new Error(`No se encontraron preguntas para el nivel ${idNivel}`);
+      let preguntas;
+      if (useSupabase) {
+        const { data, error } = await supabase.from('preguntas').select('*').eq('id_nivel', idNivel);
+        if (error) throw new Error(`Error al obtener preguntas desde Supabase: ${error.message}`);
+        preguntas = data || [];
+        // Mezclar preguntas localmente (Fisher-Yates)
+        for (let i = preguntas.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [preguntas[i], preguntas[j]] = [preguntas[j], preguntas[i]];
+        }
+      } else {
+        const [rows] = await dbPool.query('SELECT * FROM PREGUNTAS WHERE id_nivel = ? ORDER BY RAND()', [idNivel]);
+        preguntas = rows;
+      }
+      if (!preguntas || preguntas.length === 0) throw new Error(`No se encontraron preguntas para el nivel ${idNivel}`);
 
       // Obtener configuración del nivel
       const configNivel = NIVELES_CONFIG[idNivel];
@@ -578,7 +759,7 @@ function startGameLoop(socketId) {
   gameLoops.set(socketId, intervalId);
 }
 
-function stopGameLoop(socketId, guardarPuntuacion = false) {
+async function stopGameLoop(socketId, guardarPuntuacion = false) {
   if (gameLoops.has(socketId)) {
     clearInterval(gameLoops.get(socketId));
     gameLoops.delete(socketId);
@@ -591,12 +772,21 @@ function stopGameLoop(socketId, guardarPuntuacion = false) {
   if (guardarPuntuacion) {
     console.log(`Guardando puntuación final para ${sesion.socket.jugador.nombre}: ${sesion.puntuacion}`);
 
-    dbPool.query(
-      'INSERT INTO PARTIDAS (id_jugador, id_nivel, fecha_partida, puntuacion_final) VALUES (?, ?, NOW(), ?)',
-      [sesion.idJugador, sesion.idNivel, sesion.puntuacion]
-    ).catch(err => {
-      console.error('Error al guardar la puntuación:', err.message);
-    });
+    if (useSupabase) {
+      const { error } = await supabase
+        .from('partidas')
+        .insert([{ id_jugador: sesion.idJugador, id_nivel: sesion.idNivel, puntuacion_final: sesion.puntuacion }]);
+      if (error) {
+        console.error('Error al guardar la puntuación (Supabase):', error.message || error);
+      }
+    } else {
+      dbPool.query(
+        'INSERT INTO PARTIDAS (id_jugador, id_nivel, fecha_partida, puntuacion_final) VALUES (?, ?, NOW(), ?)',
+        [sesion.idJugador, sesion.idNivel, sesion.puntuacion]
+      ).catch(err => {
+        console.error('Error al guardar la puntuación:', err.message);
+      });
+    }
   }
 
   gameSessions.delete(socketId);
