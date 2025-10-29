@@ -71,7 +71,7 @@ if (process.env.SUPABASE_SERVICE_KEY && supabase) {
 }
 
 // --- Constantes del Juego ---
-const VIDAS_INICIALES = 5;
+const VIDAS_INICIALES = 3;
 const POSICION_TORRE = 100;
 const TICK_RATE_MS = 600; // Más rápido para mejor fluidez (0.6 segundos)
 const ACIERTOS_PARA_GANAR = 15; // Más aciertos para juego más largo
@@ -189,39 +189,39 @@ const NIVELES_CONFIG = {
   1: { // Nivel Principiante
     nombre: "Principiante",
     oleadas: [
-      { zombisPorOleada: 15, intervaloSpawn: 3, velocidadExtra: 0 }, // Más rápido
-      { zombisPorOleada: 20, intervaloSpawn: 2, velocidadExtra: 0 },
-      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0.5 },
+      { zombisPorOleada: 10, intervaloSpawn: 3, velocidadExtra: 0 }, // Reducido de 15 a 10
+      { zombisPorOleada: 15, intervaloSpawn: 2, velocidadExtra: 0 }, // Reducido de 20 a 15
+      { zombisPorOleada: 20, intervaloSpawn: 2, velocidadExtra: 0.5 }, // Reducido de 25 a 20
     ]
   },
   2: { // Nivel Intermedio
     nombre: "Intermedio",
     oleadas: [
-      { zombisPorOleada: 20, intervaloSpawn: 3, velocidadExtra: 0 },
-      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0 },
-      { zombisPorOleada: 30, intervaloSpawn: 2, velocidadExtra: 0.5 },
-      { zombisPorOleada: 35, intervaloSpawn: 2, velocidadExtra: 0.5 },
+      { zombisPorOleada: 15, intervaloSpawn: 3, velocidadExtra: 0 }, // Reducido de 20 a 15
+      { zombisPorOleada: 20, intervaloSpawn: 2, velocidadExtra: 0 }, // Reducido de 25 a 20
+      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0.5 }, // Reducido de 30 a 25
+      { zombisPorOleada: 30, intervaloSpawn: 2, velocidadExtra: 0.5 }, // Reducido de 35 a 30
     ]
   },
   3: { // Nivel Avanzado
     nombre: "Avanzado",
     oleadas: [
-      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0 },
-      { zombisPorOleada: 30, intervaloSpawn: 2, velocidadExtra: 0.5 },
-      { zombisPorOleada: 35, intervaloSpawn: 1, velocidadExtra: 0.5 },
-      { zombisPorOleada: 40, intervaloSpawn: 1, velocidadExtra: 1 },
-      { zombisPorOleada: 50, intervaloSpawn: 1, velocidadExtra: 1.5 },
+      { zombisPorOleada: 20, intervaloSpawn: 2, velocidadExtra: 0 }, // Reducido de 25 a 20
+      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0.5 }, // Reducido de 30 a 25
+      { zombisPorOleada: 30, intervaloSpawn: 1, velocidadExtra: 0.5 }, // Reducido de 35 a 30
+      { zombisPorOleada: 35, intervaloSpawn: 1, velocidadExtra: 1 }, // Reducido de 40 a 35
+      { zombisPorOleada: 45, intervaloSpawn: 1, velocidadExtra: 1.5 }, // Reducido de 50 a 45
     ]
   },
   4: { // Nivel Experto
     nombre: "Experto",
     oleadas: [
-      { zombisPorOleada: 30, intervaloSpawn: 2, velocidadExtra: 0.5 },
-      { zombisPorOleada: 40, intervaloSpawn: 1, velocidadExtra: 1 },
-      { zombisPorOleada: 50, intervaloSpawn: 1, velocidadExtra: 1 },
-      { zombisPorOleada: 60, intervaloSpawn: 1, velocidadExtra: 1.5 },
-      { zombisPorOleada: 75, intervaloSpawn: 1, velocidadExtra: 2 },
-      { zombisPorOleada: 100, intervaloSpawn: 1, velocidadExtra: 2.5 },
+      { zombisPorOleada: 25, intervaloSpawn: 2, velocidadExtra: 0.5 }, // Reducido de 30 a 25
+      { zombisPorOleada: 35, intervaloSpawn: 1, velocidadExtra: 1 }, // Reducido de 40 a 35
+      { zombisPorOleada: 45, intervaloSpawn: 1, velocidadExtra: 1 }, // Reducido de 50 a 45
+      { zombisPorOleada: 55, intervaloSpawn: 1, velocidadExtra: 1.5 }, // Reducido de 60 a 55
+      { zombisPorOleada: 70, intervaloSpawn: 1, velocidadExtra: 2 }, // Reducido de 75 a 70
+      { zombisPorOleada: 95, intervaloSpawn: 1, velocidadExtra: 2.5 }, // Reducido de 100 a 95
     ]
   }
 };
@@ -576,7 +576,9 @@ io.on('connection', (socket) => {
         zombisSpawneadosEnOleada: 0,
         spawnCounter: 0,
         descansoEntreOleadas: 0,
-        oleadaCompletada: false
+        oleadaCompletada: false,
+        // Array para guardar preguntas incorrectas
+        preguntasIncorrectas: []
       };
 
       gameSessions.set(socket.id, nuevaSesion);
@@ -622,8 +624,16 @@ io.on('connection', (socket) => {
         sesion.preguntaActivaId = null;
       }
     } else {
-      // RESPUESTA INCORRECTA: El zombi sigue avanzando (NO se quita vida)
-      console.log(`Respuesta incorrecta. El zombi ${datos.idPregunta} sigue avanzando...`);
+      // RESPUESTA INCORRECTA: Quitar vida y guardar pregunta incorrecta
+      sesion.vidas--;
+      console.log(`❌ Respuesta incorrecta. El zombi ${datos.idPregunta} sigue avanzando. Vidas restantes: ${sesion.vidas}`);
+
+      // Guardar la pregunta incorrecta para mostrar al final
+      sesion.preguntasIncorrectas.push({
+        enunciado: zombi.pregunta.enunciado_funcion,
+        respuestaCorrecta: zombi.pregunta.respuesta_correcta,
+        respuestaUsuario: datos.respuesta
+      });
 
       // Liberar pregunta activa para permitir otra respuesta
       if (sesion.preguntaActivaId === datos.idPregunta) {
@@ -937,7 +947,10 @@ function gameTick(socketId) {
   // 3. LÓGICA DE VICTORIA / DERROTA
   if (sesion.vidas <= 0) {
     console.log(`Juego terminado para ${sesion.socket.jugador.nombre} (sin vidas)`);
-    sesion.socket.emit('game-over', { puntuacionFinal: sesion.puntuacion });
+    sesion.socket.emit('game-over', { 
+      puntuacionFinal: sesion.puntuacion,
+      preguntasIncorrectas: sesion.preguntasIncorrectas
+    });
     stopGameLoop(socketId, true);
     return;
   }
@@ -948,7 +961,8 @@ function gameTick(socketId) {
     sesion.socket.emit('nivel-completado', {
       puntuacionFinal: sesion.puntuacion,
       oleadasCompletadas: sesion.oleadasConfig.length,
-      nombreNivel: sesion.nombreNivel
+      nombreNivel: sesion.nombreNivel,
+      preguntasIncorrectas: sesion.preguntasIncorrectas
     });
     stopGameLoop(socketId, true);
     return;

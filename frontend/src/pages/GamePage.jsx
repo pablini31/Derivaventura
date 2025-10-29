@@ -9,7 +9,7 @@ function GamePage() {
   const navigate = useNavigate()
   const [socket, setSocket] = useState(null)
   const [gameState, setGameState] = useState({
-    vidas: 5,
+    vidas: 3,
     puntuacion: 0,
     aciertos: 0,
     comodines: { bombas: 3, copos: 3 }
@@ -32,6 +32,7 @@ function GamePage() {
     zombisRestantes: 0,
     enDescanso: false
   })
+  const [preguntasIncorrectas, setPreguntasIncorrectas] = useState([])
 
   const nivelesDisponibles = [
     { id: 1, nombre: 'Principiante', oleadas: 3, descripcion: 'Perfecto para empezar' },
@@ -143,11 +144,17 @@ function GamePage() {
     newSocket.on('game-over', (data) => {
       console.log('Game Over:', data)
       setGameStatus('lost')
+      if (data.preguntasIncorrectas) {
+        setPreguntasIncorrectas(data.preguntasIncorrectas)
+      }
     })
 
     newSocket.on('nivel-completado', (data) => {
       console.log('Nivel completado:', data)
       setGameStatus('won')
+      if (data.preguntasIncorrectas) {
+        setPreguntasIncorrectas(data.preguntasIncorrectas)
+      }
     })
 
     newSocket.on('juego-limpio', (data) => {
@@ -813,7 +820,7 @@ function GamePage() {
             </>
           ) : gameStatus === 'won' ? (
             <div className="flex items-center justify-center" style={{ minHeight: '500px' }}>
-              <div className="text-center bg-green-900/50 border-4 border-green-500 rounded-xl p-8">
+              <div className="text-center bg-green-900/50 border-4 border-green-500 rounded-xl p-8 max-w-4xl">
                 <div className="text-7xl mb-4">🏆</div>
                 <h2 className="text-pixel text-4xl text-green-400 mb-6 animate-bounce">
                   ¡VICTORIA ÉPICA!
@@ -827,6 +834,34 @@ function GamePage() {
                 <p className="text-game text-2xl text-yellow-300 mb-8">
                   Puntuación Final: <span className="font-bold">{gameState.puntuacion}</span>
                 </p>
+
+                {/* Mostrar preguntas incorrectas si existen */}
+                {preguntasIncorrectas && preguntasIncorrectas.length > 0 && (
+                  <div className="bg-black/50 border-2 border-yellow-400 rounded-lg p-6 mb-8 max-h-96 overflow-y-auto">
+                    <h3 className="text-pixel text-2xl text-yellow-300 mb-4">
+                      📚 REPASO DE ERRORES
+                    </h3>
+                    <p className="text-game text-sm text-gray-300 mb-4">
+                      Aunque ganaste, revisa estos errores para mejorar:
+                    </p>
+                    <div className="space-y-4">
+                      {preguntasIncorrectas.map((pregunta, index) => (
+                        <div key={index} className="bg-slate-800/70 border border-yellow-500/50 rounded-lg p-4 text-left">
+                          <div className="text-game text-lg text-white mb-2">
+                            <span className="text-yellow-400 font-bold">#{index + 1}</span> {pregunta.enunciado}
+                          </div>
+                          <div className="text-game text-sm text-red-300 mb-1">
+                            ❌ Tu respuesta: <span className="font-bold">{pregunta.respuestaUsuario}</span>
+                          </div>
+                          <div className="text-game text-sm text-green-400">
+                            ✓ Correcta: <span className="font-bold">{pregunta.respuestaCorrecta}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <button onClick={salir} className="btn-pixel-success text-xl px-8 py-4">
                   VOLVER AL MENÚ
                 </button>
@@ -834,7 +869,7 @@ function GamePage() {
             </div>
           ) : (
             <div className="flex items-center justify-center" style={{ minHeight: '500px' }}>
-              <div className="text-center bg-red-900/50 border-4 border-red-500 rounded-xl p-8">
+              <div className="text-center bg-red-900/50 border-4 border-red-500 rounded-xl p-8 max-w-4xl">
                 <div className="text-7xl mb-4">☠️</div>
                 <h2 className="text-pixel text-4xl text-red-400 mb-6 shake-animation">
                   GAME OVER
@@ -845,6 +880,34 @@ function GamePage() {
                 <p className="text-game text-2xl text-yellow-300 mb-8">
                   Puntuación Final: <span className="font-bold">{gameState.puntuacion}</span>
                 </p>
+
+                {/* Mostrar preguntas incorrectas si existen */}
+                {preguntasIncorrectas && preguntasIncorrectas.length > 0 && (
+                  <div className="bg-black/50 border-2 border-red-400 rounded-lg p-6 mb-8 max-h-96 overflow-y-auto">
+                    <h3 className="text-pixel text-2xl text-red-300 mb-4">
+                      📚 REPASO DE ERRORES
+                    </h3>
+                    <p className="text-game text-sm text-gray-300 mb-4">
+                      Revisa estas preguntas para mejorar:
+                    </p>
+                    <div className="space-y-4">
+                      {preguntasIncorrectas.map((pregunta, index) => (
+                        <div key={index} className="bg-slate-800/70 border border-red-500/50 rounded-lg p-4 text-left">
+                          <div className="text-game text-lg text-white mb-2">
+                            <span className="text-red-400 font-bold">#{index + 1}</span> {pregunta.enunciado}
+                          </div>
+                          <div className="text-game text-sm text-red-300 mb-1">
+                            ❌ Tu respuesta: <span className="font-bold">{pregunta.respuestaUsuario}</span>
+                          </div>
+                          <div className="text-game text-sm text-green-400">
+                            ✓ Correcta: <span className="font-bold">{pregunta.respuestaCorrecta}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <button onClick={salir} className="btn-pixel text-xl px-8 py-4">
                   VOLVER AL MENÚ
                 </button>
