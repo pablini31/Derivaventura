@@ -765,6 +765,8 @@ io.on('connection', (socket) => {
         nombreNivel: configNivel.nombre,
         oleadasConfig: configNivel.oleadas,
         vidas: vidasTotales,
+        vidasExtra: vidasExtra, // Rastrear vidas extra disponibles
+        vidasBase: VIDAS_INICIALES, // Rastrear vidas base
         puntuacion: 0,
         aciertos: 0,
         preguntasDisponibles: preguntas,
@@ -830,7 +832,31 @@ io.on('connection', (socket) => {
     } else {
       // RESPUESTA INCORRECTA: Quitar vida y guardar pregunta incorrecta
       sesion.vidas--;
-      console.log(`❌ Respuesta incorrecta. El zombi ${datos.idPregunta} sigue avanzando. Vidas restantes: ${sesion.vidas}`);
+      
+      // Si tenemos vidas extra, consumir una de la base de datos
+      if (sesion.vidasExtra > 0) {
+        sesion.vidasExtra--;
+        console.log(`❌ Respuesta incorrecta. Vida EXTRA consumida. Vidas restantes: ${sesion.vidas} (${sesion.vidasBase} base + ${sesion.vidasExtra} extra)`);
+        
+        // Actualizar vidas extra en la base de datos
+        if (useSupabase) {
+          supabase
+            .from('jugadores')
+            .update({ vidas_extra: sesion.vidasExtra })
+            .eq('id_jugador', sesion.idJugador)
+            .then(({ error }) => {
+              if (error) console.error('Error al actualizar vidas extra:', error);
+              else console.log(`✅ Vidas extra actualizadas en BD: ${sesion.vidasExtra}`);
+            });
+        } else {
+          dbPool.query(
+            'UPDATE JUGADORES SET vidas_extra = ? WHERE id_jugador = ?',
+            [sesion.vidasExtra, sesion.idJugador]
+          ).catch(err => console.error('Error al actualizar vidas extra:', err));
+        }
+      } else {
+        console.log(`❌ Respuesta incorrecta. Vida BASE consumida. Vidas restantes: ${sesion.vidas}`);
+      }
 
       // Guardar la pregunta incorrecta para mostrar al final
       sesion.preguntasIncorrectas.push({
@@ -1150,7 +1176,31 @@ function gameTick(socketId) {
     if (zombi.posicion >= POSICION_TORRE) {
       // ¡ZOMBI LLEGÓ A LA BASE!
       sesion.vidas--;
-      console.log(`💀 ¡ZOMBI LLEGÓ A LA BASE! Vidas restantes: ${sesion.vidas}`);
+      
+      // Si tenemos vidas extra, consumir una de la base de datos
+      if (sesion.vidasExtra > 0) {
+        sesion.vidasExtra--;
+        console.log(`💀 ¡ZOMBI LLEGÓ A LA BASE! Vida EXTRA consumida. Vidas restantes: ${sesion.vidas} (${sesion.vidasBase} base + ${sesion.vidasExtra} extra)`);
+        
+        // Actualizar vidas extra en la base de datos
+        if (useSupabase) {
+          supabase
+            .from('jugadores')
+            .update({ vidas_extra: sesion.vidasExtra })
+            .eq('id_jugador', sesion.idJugador)
+            .then(({ error }) => {
+              if (error) console.error('Error al actualizar vidas extra:', error);
+              else console.log(`✅ Vidas extra actualizadas en BD: ${sesion.vidasExtra}`);
+            });
+        } else {
+          dbPool.query(
+            'UPDATE JUGADORES SET vidas_extra = ? WHERE id_jugador = ?',
+            [sesion.vidasExtra, sesion.idJugador]
+          ).catch(err => console.error('Error al actualizar vidas extra:', err));
+        }
+      } else {
+        console.log(`💀 ¡ZOMBI LLEGÓ A LA BASE! Vida BASE consumida. Vidas restantes: ${sesion.vidas}`);
+      }
 
       if (sesion.preguntaActivaId === zombi.idPregunta) {
         sesion.preguntaActivaId = null;
