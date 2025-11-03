@@ -80,7 +80,7 @@ function GamePage() {
           // El backend manejará agregar el comodín
           setTimeout(() => {
             console.log('Enviando evento comodin-gratis al backend')
-            socket.emit('comodin-gratis')
+            newSocket.emit('comodin-gratis')
           }, 500)
         }
         
@@ -136,8 +136,23 @@ function GamePage() {
     })
 
     newSocket.on('oleada-completada', (data) => {
-      console.log(`Oleada ${data.numeroOleada} completada`)
-      setFeedback('wave-completed')
+      console.log(`Oleada ${data.numeroOleada} completada`, data)
+      
+      // Actualizar comodines si se recibieron
+      if (data.comodines) {
+        setGameState(prev => ({
+          ...prev,
+          comodines: data.comodines
+        }))
+      }
+      
+      // Mostrar feedback con el regalo recibido
+      if (data.regalo) {
+        setFeedback(`wave-completed-${data.regalo}`)
+      } else {
+        setFeedback('wave-completed')
+      }
+      
       setTimeout(() => setFeedback(null), 3000)
     })
 
@@ -713,11 +728,16 @@ function GamePage() {
                   </div>
                 )}
 
-                {feedback === 'wave-completed' && (
-                  <div className="absolute inset-0 bg-blue-500/40 flex items-center justify-center z-30">
-                    <div className="text-pixel text-4xl text-white animate-pulse">
+                {(feedback === 'wave-completed' || feedback?.startsWith('wave-completed-')) && (
+                  <div className="absolute inset-0 bg-blue-500/40 flex items-center justify-center z-30 flex-col">
+                    <div className="text-pixel text-4xl text-white animate-pulse mb-4">
                       ✅ ¡OLEADA COMPLETADA! ✅
                     </div>
+                    {feedback?.startsWith('wave-completed-') && (
+                      <div className="text-pixel text-3xl text-yellow-300 animate-bounce">
+                        🎁 Regalo: {feedback.includes('bomba') ? '💣 BOMBA' : '❄️ COPO DE NIEVE'} 🎁
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -760,7 +780,7 @@ function GamePage() {
                         feedback === 'zombie-arrived' ? 'text-red-400' :
                         feedback === 'bomb-used' ? 'text-orange-400' :
                         feedback === 'wave-started' ? 'text-purple-400' :
-                        feedback === 'wave-completed' ? 'text-blue-400' :
+                        (feedback === 'wave-completed' || feedback?.startsWith('wave-completed-')) ? 'text-blue-400' :
                         feedback === 'free-powerup' ? 'text-cyan-400' : 'text-white'
                       }`}>
                         {feedback === 'correct' && '🎯 ¡ZOMBI ELIMINADO! ✓'}
@@ -772,7 +792,14 @@ function GamePage() {
                     ? `🌙 ¡OLEADA NOCTURNA ${oleadaInfo.actual}!` 
                     : `🌊 ¡OLEADA ${oleadaInfo.actual} INICIADA!`
                 )}
-                        {feedback === 'wave-completed' && `✅ ¡OLEADA ${oleadaInfo.actual - 1} COMPLETADA!`}
+                        {(feedback === 'wave-completed' || feedback?.startsWith('wave-completed-')) && (
+                          <>
+                            {`✅ ¡OLEADA ${oleadaInfo.actual - 1} COMPLETADA!`}
+                            {feedback?.startsWith('wave-completed-') && (
+                              <span className="text-yellow-300"> 🎁 +{feedback.includes('bomba') ? '💣' : '❄️'}</span>
+                            )}
+                          </>
+                        )}
                         {feedback === 'free-powerup' && `🎁 ¡COMODÍN GRATIS! (${gameState.aciertos} eliminados)`}
                       </div>
                     )}

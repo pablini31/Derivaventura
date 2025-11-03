@@ -11,19 +11,50 @@ function DailyChallengePage() {
   const [selectedAnswer, setSelectedAnswer] = useState(null)
   const [resultado, setResultado] = useState(null)
   const [submitted, setSubmitted] = useState(false)
+  const [yaRespondio, setYaRespondio] = useState(false)
 
   useEffect(() => {
+    verificarYaRespondio()
     fetchPreguntaDiaria()
   }, [])
 
+  const verificarYaRespondio = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]))
+      const idJugador = payload.idJugador
+
+      const response = await axios.get(`/api/preguntadiaria/verificar/${idJugador}`)
+      setYaRespondio(response.data.yaRespondio)
+      
+      if (response.data.yaRespondio) {
+        setError('Ya respondiste el reto diario de hoy. Vuelve mañana para un nuevo desafío.')
+        setLoading(false)
+      }
+    } catch (err) {
+      console.error('Error al verificar si ya respondió:', err)
+    }
+  }
+
   const fetchPreguntaDiaria = async () => {
+    if (yaRespondio) {
+      setLoading(false)
+      return
+    }
+
     try {
       const response = await axios.get('/api/preguntadiaria')
       setPregunta(response.data)
       setLoading(false)
     } catch (err) {
       console.error('Error al obtener pregunta diaria:', err)
-      setError(err.response?.data?.mensaje || 'No hay pregunta diaria disponible')
+      if (err.response?.status === 404) {
+        setError('No hay pregunta diaria disponible en este momento. Por favor, contacta al administrador.')
+      } else {
+        setError(err.response?.data?.mensaje || 'Error al cargar la pregunta diaria')
+      }
       setLoading(false)
     }
   }
@@ -50,9 +81,19 @@ function DailyChallengePage() {
 
       setResultado(response.data)
       setSubmitted(true)
+      
+      // Si fue correcto, actualizar el estado para bloquear futuras respuestas
+      if (response.data.esCorrecta) {
+        setYaRespondio(true)
+      }
     } catch (err) {
       console.error('Error al enviar respuesta:', err)
-      setError('Error al enviar la respuesta')
+      if (err.response?.status === 400 && err.response?.data?.mensaje?.includes('Ya respondiste')) {
+        setError('Ya respondiste el reto diario de hoy.')
+        setYaRespondio(true)
+      } else {
+        setError('Error al enviar la respuesta')
+      }
     }
   }
 
@@ -73,6 +114,9 @@ function DailyChallengePage() {
           </h1>
           <p className="text-game text-2xl text-purple-300">
             Gana 1 vida extra respondiendo correctamente
+          </p>
+          <p className="text-game text-sm text-gray-400 mt-2">
+            💡 Solo puedes responder una vez al día
           </p>
         </div>
 
@@ -104,6 +148,11 @@ function DailyChallengePage() {
                       +1 Vida Extra
                     </p>
                   </div>
+                  {resultado.vidasExtra && (
+                    <p className="text-game text-lg text-green-300 mb-4">
+                      Total de vidas extra: <span className="font-bold text-white">{resultado.vidasExtra}</span>
+                    </p>
+                  )}
                   <p className="text-game text-xl text-purple-300">
                     {resultado.mensaje}
                   </p>

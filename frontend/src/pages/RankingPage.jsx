@@ -52,7 +52,7 @@ function RankingPage() {
             RANKING GLOBAL
           </h1>
           <p className="text-game text-2xl text-purple-300">
-            Top 10 Mejores Jugadores
+            Top 10 Mejores Jugadores (Puntuación Total)
           </p>
         </div>
 
