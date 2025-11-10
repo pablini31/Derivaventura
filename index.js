@@ -1399,9 +1399,14 @@ function gameTick(socketId) {
 }
 
 // --- Catch-all route para React Router (debe ir AL FINAL, después de todas las rutas de API) ---
-// Express 5+ requiere '(.*)' en lugar de '*'
-app.get('/(.*)', (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+// Express 5: usar middleware en lugar de route pattern
+app.use((req, res, next) => {
+  // Si la ruta no es de API, servir el index.html del frontend
+  if (!req.path.startsWith('/api')) {
+    res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+  } else {
+    next();
+  }
 });
 
 // --- Iniciar el Servidor ---
