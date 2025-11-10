@@ -269,7 +269,10 @@ const io = new Server(server, {
 
 // --- Middlewares de Express ---
 app.use(express.json()); // Permite a Express leer JSON
-app.use(express.static(path.join(__dirname))); // Sirve archivos (tester.html)
+
+// Servir archivos estáticos del frontend compilado (producción)
+const frontendPath = path.join(__dirname, 'frontend', 'dist');
+app.use(express.static(frontendPath));
 
 // ===========================================
 // --- ENDPOINTS DE API REST (HTTP) ---
@@ -1395,8 +1398,13 @@ function gameTick(socketId) {
   });
 }
 
+// --- Catch-all route para React Router (debe ir AL FINAL, después de todas las rutas de API) ---
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+});
+
 // --- Iniciar el Servidor ---
-const PORT = process.env.PORT || 3001; // Cambiar a 3001 temporalmente
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Servidor de Derivaventura escuchando en http://localhost:${PORT}`);
 });
