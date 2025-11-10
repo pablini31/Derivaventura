@@ -11,16 +11,25 @@ const jwt = require('jsonwebtoken');
 // --- Secreto para Tokens ---
 const JWT_SECRET = 'derivaventura-2025';
 
+// Diagnóstico de variables de entorno
+console.log('=== DIAGNÓSTICO DE CONFIGURACIÓN ===');
+console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? '✅ Configurada' : '❌ No configurada');
+console.log('SUPABASE_SERVICE_KEY:', process.env.SUPABASE_SERVICE_KEY ? '✅ Configurada' : '❌ No configurada');
+console.log('DB_HOST:', process.env.DB_HOST ? '✅ Configurada' : '❌ No configurada');
+console.log('====================================');
+
 // Cliente opcional de Supabase (si config env están presentes)
 let supabase;
 try {
   supabase = require('./backend/supabaseClient');
+  console.log('Módulo supabaseClient importado:', supabase ? '✅ Cliente disponible' : '⚠️ Cliente es null');
 } catch (err) {
-  console.warn('Supabase client no cargado (archivo no encontrado)');
+  console.warn('❌ Supabase client no cargado (archivo no encontrado o error):', err.message);
 }
 
 // Decidir si usar Supabase en vez de MySQL
 const useSupabase = !!(process.env.SUPABASE_SERVICE_KEY && supabase);
+console.log('useSupabase:', useSupabase ? '✅ SÍ' : '❌ NO');
 
 // Pool de MySQL solo si NO usamos Supabase Y tenemos configuración
 let dbPool = null;
@@ -759,9 +768,20 @@ io.on('connection', (socket) => {
 
       let preguntas;
       if (useSupabase) {
+        console.log(`📚 Cargando preguntas del nivel ${idNivel} desde Supabase...`);
         const { data, error } = await supabase.from('preguntas').select('*').eq('id_nivel', idNivel);
-        if (error) throw new Error(`Error al obtener preguntas desde Supabase: ${error.message}`);
+        if (error) {
+          console.error(`❌ Error al obtener preguntas desde Supabase:`, error);
+          throw new Error(`Error al obtener preguntas desde Supabase: ${error.message}`);
+        }
         preguntas = data || [];
+        console.log(`✅ Cargadas ${preguntas.length} preguntas del nivel ${idNivel} desde Supabase`);
+        
+        if (preguntas.length === 0) {
+          console.warn(`⚠️ No se encontraron preguntas para el nivel ${idNivel} en Supabase. Verifica que ejecutaste el script supabase_schema.sql`);
+          throw new Error(`No se encontraron preguntas para el nivel ${idNivel}. Por favor contacta al administrador.`);
+        }
+        
         // Mezclar preguntas localmente (Fisher-Yates)
         for (let i = preguntas.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));

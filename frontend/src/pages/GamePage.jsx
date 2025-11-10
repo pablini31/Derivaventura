@@ -56,7 +56,9 @@ function GamePage() {
     }
 
     // Conectar al servidor Socket.IO
-    const newSocket = io('http://localhost:3001', {
+    // Usar variable de entorno para la URL del backend (producción vs desarrollo)
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+    const newSocket = io(backendUrl, {
       auth: { token }
     })
 
