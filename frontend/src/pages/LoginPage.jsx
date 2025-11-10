@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { LogIn, ArrowLeft, Loader } from 'lucide-react'
 import axios from 'axios'
+import StarWarsIntro from '../components/StarWarsIntro'
 
 function LoginPage() {
   const navigate = useNavigate()
@@ -11,6 +12,20 @@ function LoginPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showIntro, setShowIntro] = useState(false)
+
+  useEffect(() => {
+    // Verificar si ya vio la intro
+    const hasSeenIntro = localStorage.getItem('hasSeenIntro')
+    if (!hasSeenIntro) {
+      setShowIntro(true)
+    }
+  }, [])
+
+  const handleIntroComplete = () => {
+    localStorage.setItem('hasSeenIntro', 'true')
+    setShowIntro(false)
+  }
 
   const handleChange = (e) => {
     setFormData({
@@ -42,6 +57,11 @@ function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Mostrar intro si es la primera vez
+  if (showIntro) {
+    return <StarWarsIntro onComplete={handleIntroComplete} />
   }
 
   return (

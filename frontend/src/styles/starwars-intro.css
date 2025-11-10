@@ -1,0 +1,222 @@
+/* Star Wars Intro Styles */
+.star-wars-intro {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  overflow: hidden;
+  z-index: 9999;
+  perspective: 400px;
+}
+
+/* Botón de saltar */
+.skip-button {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: #feda4a;
+  padding: 10px 20px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  cursor: pointer;
+  z-index: 10000;
+  transition: all 0.3s ease;
+  border-radius: 5px;
+}
+
+.skip-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: #feda4a;
+  transform: scale(1.05);
+}
+
+/* Texto inicial "En un laboratorio no muy lejano..." */
+.intro-text {
+  position: absolute;
+  top: 45%;
+  width: 100%;
+  text-align: center;
+  color: #4a9eff;
+  font-size: 1.5rem;
+  font-family: 'Press Start 2P', monospace;
+  animation: fade-in-out 8s ease-in-out forwards;
+  opacity: 0;
+  z-index: 1;
+}
+
+@keyframes fade-in-out {
+  0% { opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Logo del juego */
+.game-logo {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  color: #feda4a;
+  font-size: 5rem;
+  font-family: 'Press Start 2P', monospace;
+  text-align: center;
+  animation: logo-zoom 5s ease-in forwards;
+  animation-delay: 8s;
+  opacity: 0;
+  text-shadow: 0 0 20px #feda4a,
+               0 0 40px #feda4a,
+               0 0 60px #feda4a;
+  z-index: 2;
+}
+
+@keyframes logo-zoom {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.5);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.5);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.1);
+  }
+}
+
+/* Contenedor del crawl */
+.crawl-container {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  animation: crawl-up 40s linear forwards;
+  animation-delay: 13s;
+}
+
+@keyframes crawl-up {
+  0% {
+    top: 100%;
+  }
+  100% {
+    top: -200%;
+  }
+}
+
+/* El texto que se desplaza */
+.crawl {
+  position: relative;
+  transform: perspective(400px) rotateX(25deg);
+  transform-origin: 50% 100%;
+  font-family: 'Press Start 2P', monospace;
+  color: #feda4a;
+  text-align: justify;
+  padding: 0 20%;
+  line-height: 2;
+}
+
+.crawl .title {
+  text-align: center;
+  margin-bottom: 100px;
+}
+
+.crawl .title p {
+  font-size: 1.2rem;
+  color: #4a9eff;
+  margin: 0;
+  letter-spacing: 3px;
+}
+
+.crawl .title h1 {
+  font-size: 2.5rem;
+  margin: 20px 0;
+  letter-spacing: 5px;
+  text-shadow: 0 0 10px #feda4a;
+}
+
+.crawl .story {
+  font-size: 1.1rem;
+  line-height: 2.5;
+}
+
+.crawl .story p {
+  margin-bottom: 50px;
+  text-indent: 2em;
+}
+
+.crawl .story strong {
+  color: #fff;
+  font-weight: bold;
+  text-shadow: 0 0 10px #feda4a,
+               0 0 20px #feda4a;
+}
+
+/* Estrellas de fondo */
+.star-wars-intro::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    radial-gradient(2px 2px at 20px 30px, #eee, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 60px 70px, #fff, rgba(0,0,0,0)),
+    radial-gradient(1px 1px at 50px 50px, #ddd, rgba(0,0,0,0)),
+    radial-gradient(1px 1px at 130px 80px, #fff, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 80px 10px, #fff, rgba(0,0,0,0)),
+    radial-gradient(1px 1px at 150px 150px, #ddd, rgba(0,0,0,0));
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  animation: stars-move 100s linear infinite;
+}
+
+@keyframes stars-move {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 -2000px;
+  }
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  .game-logo {
+    font-size: 2.5rem;
+  }
+
+  .crawl {
+    padding: 0 10%;
+    font-size: 0.9rem;
+  }
+
+  .crawl .title h1 {
+    font-size: 1.8rem;
+  }
+
+  .crawl .story {
+    font-size: 0.85rem;
+    line-height: 2;
+  }
+
+  .intro-text {
+    font-size: 1rem;
+    padding: 0 20px;
+  }
+
+  .skip-button {
+    font-size: 10px;
+    padding: 8px 15px;
+  }
+}

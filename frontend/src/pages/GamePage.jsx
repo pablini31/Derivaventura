@@ -162,6 +162,11 @@ function GamePage() {
       if (data.preguntasIncorrectas) {
         setPreguntasIncorrectas(data.preguntasIncorrectas)
       }
+      
+      // Redirigir al dashboard después de 5 segundos
+      setTimeout(() => {
+        navigate('/dashboard')
+      }, 5000)
     })
 
     newSocket.on('nivel-completado', (data) => {
@@ -170,6 +175,11 @@ function GamePage() {
       if (data.preguntasIncorrectas) {
         setPreguntasIncorrectas(data.preguntasIncorrectas)
       }
+      
+      // Redirigir al dashboard después de 5 segundos
+      setTimeout(() => {
+        navigate('/dashboard')
+      }, 5000)
     })
 
     newSocket.on('juego-limpio', (data) => {
@@ -862,6 +872,13 @@ function GamePage() {
                   Puntuación Final: <span className="font-bold">{gameState.puntuacion}</span>
                 </p>
 
+                {/* Mensaje de redirección automática */}
+                <div className="bg-blue-900/50 border-2 border-blue-400 rounded-lg p-4 mb-6 animate-pulse">
+                  <p className="text-game text-xl text-blue-300">
+                    ⏱️ Regresando al menú en 5 segundos...
+                  </p>
+                </div>
+
                 {/* Mostrar preguntas incorrectas si existen */}
                 {preguntasIncorrectas && preguntasIncorrectas.length > 0 && (
                   <div className="bg-black/50 border-2 border-yellow-400 rounded-lg p-6 mb-8 max-h-96 overflow-y-auto">
@@ -907,6 +924,13 @@ function GamePage() {
                 <p className="text-game text-2xl text-yellow-300 mb-8">
                   Puntuación Final: <span className="font-bold">{gameState.puntuacion}</span>
                 </p>
+
+                {/* Mensaje de redirección automática */}
+                <div className="bg-blue-900/50 border-2 border-blue-400 rounded-lg p-4 mb-6 animate-pulse">
+                  <p className="text-game text-xl text-blue-300">
+                    ⏱️ Regresando al menú en 5 segundos...
+                  </p>
+                </div>
 
                 {/* Mostrar preguntas incorrectas si existen */}
                 {preguntasIncorrectas && preguntasIncorrectas.length > 0 && (
