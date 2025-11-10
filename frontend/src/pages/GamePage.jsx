@@ -56,8 +56,13 @@ function GamePage() {
     }
 
     // Conectar al servidor Socket.IO
-    // Usar variable de entorno para la URL del backend (producción vs desarrollo)
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+    // En producción: usa el mismo dominio (window.location.origin)
+    // En desarrollo: usa el proxy configurado en vite.config.js
+    const isDevelopment = import.meta.env.DEV
+    const backendUrl = isDevelopment ? 'http://localhost:3001' : window.location.origin
+    
+    console.log('🔌 Conectando a Socket.IO:', backendUrl)
+    
     const newSocket = io(backendUrl, {
       auth: { token }
     })
