@@ -1,21 +1,44 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import '../styles/starwars-intro.css'
 
 function StarWarsIntro({ onComplete }) {
   const [showIntro, setShowIntro] = useState(true)
+  const audioRef = useRef(null)
 
   const handleComplete = useCallback(() => {
+    // Detener la música
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
     setShowIntro(false)
     if (onComplete) onComplete()
   }, [onComplete])
 
   useEffect(() => {
+    // Guardar referencia del audio
+    const audio = audioRef.current
+
+    // Reproducir música automáticamente
+    if (audio) {
+      audio.play().catch(error => {
+        console.log('No se pudo reproducir la música automáticamente:', error)
+      })
+    }
+
     // Auto-completar después de 45 segundos
     const timer = setTimeout(() => {
       handleComplete()
     }, 45000)
 
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      // Detener música al desmontar
+      if (audio) {
+        audio.pause()
+        audio.currentTime = 0
+      }
+    }
   }, [handleComplete])
 
   const handleSkip = () => {
@@ -26,6 +49,13 @@ function StarWarsIntro({ onComplete }) {
 
   return (
     <div className="star-wars-intro">
+      {/* Audio de fondo */}
+      <audio 
+        ref={audioRef}
+        src="/intro-music.mp3"
+        loop
+      />
+
       {/* Botón para saltar */}
       <button 
         onClick={handleSkip}
