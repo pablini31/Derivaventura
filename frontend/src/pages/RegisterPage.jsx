@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { UserPlus, ArrowLeft, Loader } from 'lucide-react'
 import axios from 'axios'
+import AudioManager from '../components/AudioManager'
+import { playClickSound, useSettings } from '../hooks/useSettings'
 
 function RegisterPage() {
+  const { settings } = useSettings()
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
     nombre_usuario: '',
@@ -65,10 +68,20 @@ function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
+    <>
+      {/* Música de fondo del menú */}
+      {settings.audio.musicEnabled && (
+        <AudioManager 
+          track="/menu-music.mp3" 
+          volume={settings.audio.musicVolume * settings.audio.masterVolume} 
+          loop={true} 
+        />
+      )}
+      
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
         {/* Botón de regreso */}
-        <Link to="/" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-6 text-game text-xl">
+        <Link to="/" onClick={playClickSound} className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-6 text-game text-xl">
           <ArrowLeft size={20} />
           <span>Volver al inicio</span>
         </Link>
@@ -200,7 +213,7 @@ function RegisterPage() {
           <div className="mt-6 text-center">
             <p className="text-game text-lg text-gray-400">
               ¿Ya tienes cuenta?{' '}
-              <Link to="/login" className="text-purple-400 hover:text-purple-300 underline">
+              <Link to="/login" onClick={playClickSound} className="text-purple-400 hover:text-purple-300 underline">
                 Inicia sesión aquí
               </Link>
             </p>
@@ -208,6 +221,7 @@ function RegisterPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 

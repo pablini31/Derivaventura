@@ -1,9 +1,23 @@
 import { Link } from 'react-router-dom'
 import { Bomb, Trophy, Calendar, Play, UserPlus, LogIn } from 'lucide-react'
+import AudioManager from '../components/AudioManager'
+import { playClickSound, useSettings } from '../hooks/useSettings'
 
 function HomePage() {
+  const { settings } = useSettings()
+  
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <>
+      {/* Música de fondo del menú */}
+      {settings.audio.musicEnabled && (
+        <AudioManager 
+          track="/menu-music.mp3" 
+          volume={settings.audio.musicVolume * settings.audio.masterVolume} 
+          loop={true} 
+        />
+      )}
+      
+      <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-4xl w-full">
         {/* Logo y título principal */}
         <div className="text-center mb-12 float-animation">
@@ -35,14 +49,14 @@ function HomePage() {
                 COMENZAR
               </h2>
               
-              <Link to="/login" className="block">
+              <Link to="/login" className="block" onClick={playClickSound}>
                 <button className="btn-pixel w-full flex items-center justify-center gap-3">
                   <LogIn size={20} />
                   <span>Iniciar Sesión</span>
                 </button>
               </Link>
               
-              <Link to="/register" className="block">
+              <Link to="/register" className="block" onClick={playClickSound}>
                 <button className="btn-pixel-success w-full flex items-center justify-center gap-3">
                   <UserPlus size={20} />
                   <span>Registrarse</span>
@@ -80,7 +94,7 @@ function HomePage() {
 
         {/* Botones de navegación adicionales */}
         <div className="flex justify-center">
-          <Link to="/ranking" className="block w-full md:w-1/2">
+          <Link to="/ranking" className="block w-full md:w-1/2" onClick={playClickSound}>
             <button className="btn-pixel w-full flex items-center justify-center gap-3">
               <Trophy size={20} />
               <span>Ver Ranking</span>
@@ -110,6 +124,7 @@ function HomePage() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 

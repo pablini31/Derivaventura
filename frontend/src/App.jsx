@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage'
 import GamePage from './pages/GamePage'
 import RankingPage from './pages/RankingPage'
 import DailyChallengePage from './pages/DailyChallengePage'
+import SettingsPage from './pages/SettingsPage'
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
             <Route path="/game" element={<GamePage />} />
             <Route path="/ranking" element={<RankingPage />} />
             <Route path="/daily-challenge" element={<DailyChallengePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </div>
       </Router>

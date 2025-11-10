@@ -22,52 +22,75 @@ try {
 // Decidir si usar Supabase en vez de MySQL
 const useSupabase = !!(process.env.SUPABASE_SERVICE_KEY && supabase);
 
-// Pool de MySQL solo si NO usamos Supabase
+// Pool de MySQL solo si NO usamos Supabase Y tenemos configuración
 let dbPool = null;
-if (!useSupabase) {
+const hasDbConfig = process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME;
+
+if (!useSupabase && hasDbConfig) {
   const mysql = require('mysql2');
   dbPool = mysql.createPool({
-    host: process.env.DB_HOST || '127.0.0.1',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '', // ¡Recuerda poner tu contraseña si tienes una!
-    database: process.env.DB_NAME || 'derivaventura',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME,
     port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
   }).promise();
-} else {
-  console.log('Usando Supabase como proveedor de base de datos. No se creará pool MySQL.');
+  console.log('Usando MySQL como proveedor de base de datos.');
+} else if (!useSupabase) {
+  console.log('⚠️ Modo DEMO: Sin base de datos configurada. Usando datos mock.');
 }
 
 // --- Plantillas de Enemigos ---
 const plantillasEnemigos = [];
+
+// Datos mock para desarrollo sin base de datos
+const enemigosDemo = [
+  { nombre: 'Zombie Normal', velocidad_base: 1, puntos_otorgados: 10 },
+  { nombre: 'Zombie Cono', velocidad_base: 1, puntos_otorgados: 20 },
+  { nombre: 'Zombie Cubeta', velocidad_base: 1, puntos_otorgados: 30 },
+  { nombre: 'Zombie Futbolista', velocidad_base: 2, puntos_otorgados: 40 },
+  { nombre: 'Zombie Gigante', velocidad_base: 1, puntos_otorgados: 50 }
+];
+
 if (process.env.SUPABASE_SERVICE_KEY && supabase) {
   // Cargar enemigos desde Supabase
   (async () => {
     const { data, error } = await supabase.from('enemigos').select('*');
     if (error) {
       console.error('Error al cargar plantillas de enemigos desde Supabase:', error);
+      plantillasEnemigos.push(...enemigosDemo);
     } else {
       plantillasEnemigos.push(...(data || []));
       if (plantillasEnemigos.length > 0) {
         console.log(`Cargadas ${plantillasEnemigos.length} plantillas de enemigos (Supabase).`);
       } else {
-        console.error('¡ADVERTENCIA! No se encontraron enemigos en Supabase.');
+        console.error('¡ADVERTENCIA! No se encontraron enemigos en Supabase. Usando datos demo.');
+        plantillasEnemigos.push(...enemigosDemo);
       }
     }
   })();
-} else {
+} else if (dbPool) {
   dbPool.query('SELECT * FROM ENEMIGOS')
     .then(([rows]) => {
       plantillasEnemigos.push(...rows);
       if (plantillasEnemigos.length > 0) {
-        console.log(`Cargadas ${plantillasEnemigos.length} plantillas de enemigos.`);
+        console.log(`Cargadas ${plantillasEnemigos.length} plantillas de enemigos (MySQL).`);
       } else {
-        console.error('¡ADVERTENCIA! No se encontraron enemigos en la BD.');
+        console.error('¡ADVERTENCIA! No se encontraron enemigos en la BD. Usando datos demo.');
+        plantillasEnemigos.push(...enemigosDemo);
       }
     })
-    .catch(err => console.error('Error al cargar plantillas de enemigos:', err));
+    .catch(err => {
+      console.error('Error al cargar plantillas de enemigos:', err);
+      plantillasEnemigos.push(...enemigosDemo);
+    });
+} else {
+  // Modo demo sin base de datos
+  plantillasEnemigos.push(...enemigosDemo);
+  console.log(`🎮 Modo DEMO: Cargadas ${plantillasEnemigos.length} plantillas de enemigos mock.`);
 }
 
 // --- Constantes del Juego ---
@@ -253,6 +276,9 @@ app.use(express.static(path.join(__dirname))); // Sirve archivos (tester.html)
 // ===========================================
 
 // --- API ENDPOINTS (Registro y Login) ---
+// Almacén temporal para modo demo
+const jugadoresDemo = new Map();
+
 app.post('/api/jugadores/registro', async (req, res) => {
   try {
     const { nombre_usuario, correo, password } = req.body;
@@ -261,7 +287,8 @@ app.post('/api/jugadores/registro', async (req, res) => {
     }
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(password, salt);
-    if (process.env.SUPABASE_SERVICE_KEY && supabase) {
+    
+    if (useSupabase) {
       // Usar Supabase
       const { data, error } = await supabase
         .from('jugadores')
@@ -274,12 +301,27 @@ app.post('/api/jugadores/registro', async (req, res) => {
         console.error('Supabase insert error:', error);
         return res.status(500).json({ mensaje: 'Error interno del servidor.' });
       }
-    } else {
+    } else if (dbPool) {
       await dbPool.query(
         'INSERT INTO JUGADORES (nombre_usuario, correo, password_hash, fecha_registro, vidas_extra) VALUES (?, ?, ?, NOW(), 0)',
         [nombre_usuario, correo, password_hash]
       );
+    } else {
+      // Modo demo - verificar duplicados
+      if (jugadoresDemo.has(nombre_usuario)) {
+        return res.status(409).json({ mensaje: 'Error: El nombre de usuario ya existe.' });
+      }
+      
+      // Guardar en memoria
+      jugadoresDemo.set(nombre_usuario, {
+        id_jugador: jugadoresDemo.size + 1,
+        nombre_usuario,
+        correo,
+        password_hash,
+        vidas_extra: 0
+      });
     }
+    
     console.log(`Nuevo jugador registrado: ${nombre_usuario}`);
     res.status(201).json({ mensaje: '¡Usuario registrado exitosamente!' });
   } catch (error) {
@@ -722,9 +764,67 @@ io.on('connection', (socket) => {
           const j = Math.floor(Math.random() * (i + 1));
           [preguntas[i], preguntas[j]] = [preguntas[j], preguntas[i]];
         }
-      } else {
+      } else if (dbPool) {
         const [rows] = await dbPool.query('SELECT * FROM PREGUNTAS WHERE id_nivel = ? ORDER BY RAND()', [idNivel]);
         preguntas = rows;
+      } else {
+        // Datos mock para desarrollo
+        const preguntasDemo = [
+          {
+            id_pregunta: 1,
+            id_nivel: idNivel,
+            enunciado_funcion: "f(x) = 3x²",
+            respuesta_correcta: "6x",
+            opcion_b: "3x",
+            opcion_c: "6x²",
+            opcion_d: "9x"
+          },
+          {
+            id_pregunta: 2,
+            id_nivel: idNivel,
+            enunciado_funcion: "f(x) = 2x³",
+            respuesta_correcta: "6x²",
+            opcion_b: "2x²",
+            opcion_c: "6x³",
+            opcion_d: "2x"
+          },
+          {
+            id_pregunta: 3,
+            id_nivel: idNivel,
+            enunciado_funcion: "f(x) = 5x",
+            respuesta_correcta: "5",
+            opcion_b: "5x",
+            opcion_c: "x",
+            opcion_d: "0"
+          },
+          {
+            id_pregunta: 4,
+            id_nivel: idNivel,
+            enunciado_funcion: "f(x) = x⁴",
+            respuesta_correcta: "4x³",
+            opcion_b: "x³",
+            opcion_c: "4x⁴",
+            opcion_d: "x⁴"
+          },
+          {
+            id_pregunta: 5,
+            id_nivel: idNivel,
+            enunciado_funcion: "f(x) = 7",
+            respuesta_correcta: "0",
+            opcion_b: "7",
+            opcion_c: "7x",
+            opcion_d: "1"
+          }
+        ];
+        
+        // Duplicar preguntas para tener más variedad
+        preguntas = [...preguntasDemo, ...preguntasDemo, ...preguntasDemo];
+        
+        // Mezclar preguntas
+        for (let i = preguntas.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [preguntas[i], preguntas[j]] = [preguntas[j], preguntas[i]];
+        }
       }
       if (!preguntas || preguntas.length === 0) throw new Error(`No se encontraron preguntas para el nivel ${idNivel}`);
 

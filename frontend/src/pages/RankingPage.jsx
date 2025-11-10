@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Trophy, ArrowLeft, Medal, Loader } from 'lucide-react'
 import axios from 'axios'
+import AudioManager from '../components/AudioManager'
+import { playClickSound, useSettings } from '../hooks/useSettings'
 
 function RankingPage() {
+  const { settings } = useSettings()
   const [ranking, setRanking] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -37,10 +40,20 @@ function RankingPage() {
   }
 
   return (
-    <div className="min-h-screen p-4">
-      <div className="max-w-4xl mx-auto">
+    <>
+      {/* Música de fondo del menú */}
+      {settings.audio.musicEnabled && (
+        <AudioManager 
+          track="/menu-music.mp3" 
+          volume={settings.audio.musicVolume * settings.audio.masterVolume} 
+          loop={true} 
+        />
+      )}
+      
+      <div className="min-h-screen p-4">
+        <div className="max-w-4xl mx-auto">
         {/* Botón de regreso */}
-        <Link to="/dashboard" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-6 text-game text-xl">
+        <Link to="/dashboard" onClick={playClickSound} className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-6 text-game text-xl">
           <ArrowLeft size={20} />
           <span>Volver al menú</span>
         </Link>
@@ -139,6 +152,7 @@ function RankingPage() {
         )}
       </div>
     </div>
+    </>
   )
 }
 

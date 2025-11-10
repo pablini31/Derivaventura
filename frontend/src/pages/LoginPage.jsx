@@ -3,9 +3,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { LogIn, ArrowLeft, Loader } from 'lucide-react'
 import axios from 'axios'
 import StarWarsIntro from '../components/StarWarsIntro'
+import AudioManager from '../components/AudioManager'
+import { playClickSound, useSettings } from '../hooks/useSettings'
 
 function LoginPage() {
   const navigate = useNavigate()
+  const { settings } = useSettings()
   const [formData, setFormData] = useState({
     nombre_usuario: '',
     password: ''
@@ -65,10 +68,20 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <>
+      {/* Música de fondo del menú */}
+      {settings.audio.musicEnabled && (
+        <AudioManager 
+          track="/menu-music.mp3" 
+          volume={settings.audio.musicVolume * settings.audio.masterVolume} 
+          loop={true} 
+        />
+      )}
+      
+      <div className="min-h-screen flex items-center justify-center p-4">
       <div className="max-w-md w-full">
         {/* Botón de regreso */}
-        <Link to="/" className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-6 text-game text-xl">
+        <Link to="/" onClick={playClickSound} className="inline-flex items-center gap-2 text-purple-400 hover:text-purple-300 mb-6 text-game text-xl">
           <ArrowLeft size={20} />
           <span>Volver al inicio</span>
         </Link>
@@ -154,7 +167,7 @@ function LoginPage() {
           <div className="mt-6 text-center">
             <p className="text-game text-lg text-gray-400">
               ¿No tienes cuenta?{' '}
-              <Link to="/register" className="text-purple-400 hover:text-purple-300 underline">
+              <Link to="/register" onClick={playClickSound} className="text-purple-400 hover:text-purple-300 underline">
                 Regístrate aquí
               </Link>
             </p>
@@ -162,6 +175,7 @@ function LoginPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 

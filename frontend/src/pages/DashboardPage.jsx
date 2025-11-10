@@ -1,10 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Play, Calendar, Trophy, Settings, LogOut, User, Heart } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import AudioManager from '../components/AudioManager'
+import { playClickSound, useSettings } from '../hooks/useSettings'
 
 function DashboardPage() {
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
+  const { settings } = useSettings()
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -19,14 +22,25 @@ function DashboardPage() {
   }, [navigate])
 
   const handleLogout = () => {
+    playClickSound()
     localStorage.removeItem('token')
     localStorage.removeItem('username')
     navigate('/')
   }
 
   return (
-    <div className="min-h-screen p-4">
-      <div className="max-w-6xl mx-auto">
+    <>
+      {/* Música de fondo del menú */}
+      {settings.audio.musicEnabled && (
+        <AudioManager 
+          track="/menu-music.mp3" 
+          volume={settings.audio.musicVolume * settings.audio.masterVolume} 
+          loop={true} 
+        />
+      )}
+      
+      <div className="min-h-screen p-4">
+        <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="card-pixel mb-6">
           <div className="flex items-center justify-between">
@@ -68,7 +82,7 @@ function DashboardPage() {
         {/* Opciones principales */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Jugar */}
-          <Link to="/game">
+          <Link to="/game" onClick={playClickSound}>
             <div className="card-pixel hover:scale-105 transition-transform cursor-pointer h-full">
               <div className="text-center">
                 <Play className="w-20 h-20 text-green-400 mx-auto mb-4 glow-animation" strokeWidth={2.5} />
@@ -83,7 +97,7 @@ function DashboardPage() {
           </Link>
 
           {/* Desafío Diario */}
-          <Link to="/daily-challenge">
+          <Link to="/daily-challenge" onClick={playClickSound}>
             <div className="card-pixel hover:scale-105 transition-transform cursor-pointer h-full">
               <div className="text-center">
                 <Calendar className="w-20 h-20 text-blue-400 mx-auto mb-4 glow-animation" strokeWidth={2.5} />
@@ -102,7 +116,7 @@ function DashboardPage() {
           </Link>
 
           {/* Ranking */}
-          <Link to="/ranking">
+          <Link to="/ranking" onClick={playClickSound}>
             <div className="card-pixel hover:scale-105 transition-transform cursor-pointer h-full">
               <div className="text-center">
                 <Trophy className="w-20 h-20 text-yellow-400 mx-auto mb-4 glow-animation" strokeWidth={2.5} />
@@ -117,17 +131,19 @@ function DashboardPage() {
           </Link>
 
           {/* Configuración */}
-          <div className="card-pixel opacity-50 cursor-not-allowed h-full">
-            <div className="text-center">
-              <Settings className="w-20 h-20 text-gray-400 mx-auto mb-4" strokeWidth={2.5} />
-              <h3 className="text-pixel text-2xl text-gray-400 mb-2">
-                CONFIGURACIÓN
-              </h3>
-              <p className="text-game text-lg text-gray-500">
-                Próximamente
-              </p>
+          <Link to="/settings" onClick={playClickSound}>
+            <div className="card-pixel hover:scale-105 transition-transform cursor-pointer h-full">
+              <div className="text-center">
+                <Settings className="w-20 h-20 text-purple-400 mx-auto mb-4 glow-animation" strokeWidth={2.5} />
+                <h3 className="text-pixel text-2xl text-white mb-2">
+                  CONFIGURACIÓN
+                </h3>
+                <p className="text-game text-lg text-purple-300">
+                  Ajustes del juego
+                </p>
+              </div>
             </div>
-          </div>
+          </Link>
         </div>
 
         {/* Instrucciones */}
@@ -150,6 +166,7 @@ function DashboardPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 

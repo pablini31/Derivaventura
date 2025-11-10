@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Heart, Bomb as BombIcon, Snowflake, ArrowLeft, Pause, Play } from 'lucide-react'
 import { io } from 'socket.io-client'
 import ZombieCharacter from '../components/ZombieCharacter'
 import HouseBase from '../components/HouseBase'
+import AudioManager from '../components/AudioManager'
+import { useSettings } from '../hooks/useSettings'
 
 function GamePage() {
   const navigate = useNavigate()
+  const { settings } = useSettings()
   const [socket, setSocket] = useState(null)
+  const winSoundRef = useRef(null)
+  const loseSoundRef = useRef(null)
   const [gameState, setGameState] = useState({
     vidas: 3,
     puntuacion: 0,
@@ -163,6 +168,15 @@ function GamePage() {
         setPreguntasIncorrectas(data.preguntasIncorrectas)
       }
       
+      // Reproducir sonido de derrota
+      if (settings.audio.sfxEnabled) {
+        if (!loseSoundRef.current) {
+          loseSoundRef.current = new Audio('/lose-sound.mp3')
+        }
+        loseSoundRef.current.volume = settings.audio.sfxVolume * settings.audio.masterVolume
+        loseSoundRef.current.play().catch(err => console.log('Error playing lose sound:', err))
+      }
+      
       // Redirigir al dashboard después de 5 segundos
       setTimeout(() => {
         navigate('/dashboard')
@@ -174,6 +188,15 @@ function GamePage() {
       setGameStatus('won')
       if (data.preguntasIncorrectas) {
         setPreguntasIncorrectas(data.preguntasIncorrectas)
+      }
+      
+      // Reproducir sonido de victoria
+      if (settings.audio.sfxEnabled) {
+        if (!winSoundRef.current) {
+          winSoundRef.current = new Audio('/win-sound.wav')
+        }
+        winSoundRef.current.volume = settings.audio.sfxVolume * settings.audio.masterVolume
+        winSoundRef.current.play().catch(err => console.log('Error playing win sound:', err))
       }
       
       // Redirigir al dashboard después de 5 segundos
@@ -256,8 +279,18 @@ function GamePage() {
   }
 
   return (
-    <div className="min-h-screen p-2 md:p-4">
-      <div className="max-w-5xl mx-auto">
+    <>
+      {/* Música del juego - Principiante e Intermedio */}
+      {gameStatus === 'playing' && (nivel === 1 || nivel === 2) && settings.audio.musicEnabled && (
+        <AudioManager 
+          track="/game-music.mp3" 
+          volume={settings.audio.musicVolume * settings.audio.masterVolume} 
+          loop={true} 
+        />
+      )}
+      
+      <div className="min-h-screen p-2 md:p-4">
+        <div className="max-w-5xl mx-auto">
         {/* Botón volver */}
         <button onClick={salir} className="mb-4 text-purple-400 hover:text-purple-300 flex items-center gap-2 text-game text-lg">
           <ArrowLeft size={20} />
@@ -969,6 +1002,7 @@ function GamePage() {
 
       </div>
     </div>
+    </>
   )
 }
 
