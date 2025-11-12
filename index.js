@@ -102,6 +102,131 @@ if (process.env.SUPABASE_SERVICE_KEY && supabase) {
   console.log(`🎮 Modo DEMO: Cargadas ${plantillasEnemigos.length} plantillas de enemigos mock.`);
 }
 
+// --- HELPERS: Carga robusta de preguntas y enemigos ---
+async function cargarEnemigosSiNecesarios() {
+  if (plantillasEnemigos.length > 0) return;
+  if (useSupabase && supabase) {
+    try {
+      const { data, error } = await supabase.from('enemigos').select('*');
+      if (!error && data && data.length > 0) {
+        plantillasEnemigos.push(...data);
+        console.log(`✅ Cargadas ${plantillasEnemigos.length} plantillas de enemigos (Supabase en tiempo de ejecución).`);
+        return;
+      }
+      console.warn('⚠️ No se encontraron enemigos en Supabase al cargar en tiempo de ejecución. Usando demo.');
+    } catch (err) {
+      console.error('Error al cargar enemigos desde Supabase en tiempo de ejecución:', err.message || err);
+    }
+  }
+
+  if (dbPool) {
+    try {
+      const [rows] = await dbPool.query('SELECT * FROM ENEMIGOS');
+      if (rows && rows.length > 0) {
+        plantillasEnemigos.push(...rows);
+        console.log(`✅ Cargadas ${plantillasEnemigos.length} plantillas de enemigos (MySQL en tiempo de ejecución).`);
+        return;
+      }
+      console.warn('⚠️ No se encontraron enemigos en MySQL al cargar en tiempo de ejecución. Usando demo.');
+    } catch (err) {
+      console.error('Error al cargar enemigos desde MySQL en tiempo de ejecución:', err.message || err);
+    }
+  }
+
+  // Fallback demo
+  plantillasEnemigos.push(...enemigosDemo);
+  console.log(`🎮 Fallback: cargadas ${plantillasEnemigos.length} plantillas demo de enemigos.`);
+}
+
+async function obtenerPreguntasNivel(idNivel) {
+  // Intentar múltiples estrategias para robustez en deploys donde el schema pueda variar
+  let preguntas = [];
+
+  if (useSupabase && supabase) {
+    const posiblesColumnas = ['id_nivel', 'nivel', 'nivel_id', 'idNivel', 'id_nivel_p'];
+    for (const col of posiblesColumnas) {
+      try {
+        console.log(`🔎 Intentando cargar preguntas (Supabase) filtrando por columna '${col}' = ${idNivel}`);
+        const { data, error } = await supabase.from('preguntas').select('*').eq(col, idNivel);
+        if (!error && data && data.length > 0) {
+          preguntas = data;
+          console.log(`✅ Cargadas ${preguntas.length} preguntas usando columna '${col}'.`);
+          break;
+        }
+      } catch (err) {
+        console.warn(`⚠️ Error probando columna ${col} en Supabase:`, err.message || err);
+      }
+    }
+
+    // Si aún no encontró, cargar todo y filtrar localmente por posibles campos
+    if (preguntas.length === 0) {
+      try {
+        console.log('🔎 No se obtuvieron preguntas filtradas; cargando todas y filtrando localmente (Supabase).');
+        const { data, error } = await supabase.from('preguntas').select('*');
+        if (!error && data && data.length > 0) {
+          // normalizar
+          preguntas = data.filter(p => {
+            const nivelVal = p.id_nivel || p.nivel || p.nivel_id || p.idNivel || p.id_nivel_p;
+            return parseInt(nivelVal) === parseInt(idNivel);
+          });
+          console.log(`✅ Filtrado localmente: ${preguntas.length} preguntas para nivel ${idNivel}.`);
+        }
+      } catch (err) {
+        console.error('❌ Error cargando preguntas sin filtro desde Supabase:', err.message || err);
+      }
+    }
+  } else if (dbPool) {
+    try {
+      // Intentar consulta con nombre de columna estándar
+      const [rows] = await dbPool.query('SELECT * FROM PREGUNTAS WHERE id_nivel = ?', [idNivel]);
+      preguntas = rows;
+      if (!preguntas || preguntas.length === 0) {
+        // Intentar sin filtro y filtrar en JS por seguridad
+        const [all] = await dbPool.query('SELECT * FROM PREGUNTAS');
+        preguntas = all.filter(p => {
+          const nivelVal = p.id_nivel || p.nivel || p.nivel_id || p.idNivel || p.id_nivel_p;
+          return parseInt(nivelVal) === parseInt(idNivel);
+        });
+      }
+    } catch (err) {
+      console.error('❌ Error cargando preguntas desde MySQL:', err.message || err);
+    }
+  } else {
+    // Modo demo: duplicar y filtrar por id_nivel si existe
+    const preguntasDemo = [
+      {
+        id_pregunta: 1,
+        id_nivel: idNivel,
+        enunciado_funcion: "f(x) = 3x²",
+        respuesta_correcta: "6x",
+        opcion_b: "3x",
+        opcion_c: "6x²",
+        opcion_d: "9x"
+      },
+      {
+        id_pregunta: 2,
+        id_nivel: idNivel,
+        enunciado_funcion: "f(x) = 2x³",
+        respuesta_correcta: "6x²",
+        opcion_b: "2x²",
+        opcion_c: "6x³",
+        opcion_d: "2x"
+      }
+    ];
+    preguntas = [...preguntasDemo, ...preguntasDemo, ...preguntasDemo];
+  }
+
+  // Mezclar preguntas para evitar repetición en orden
+  if (preguntas && preguntas.length > 1) {
+    for (let i = preguntas.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [preguntas[i], preguntas[j]] = [preguntas[j], preguntas[i]];
+    }
+  }
+
+  return preguntas || [];
+}
+
 // --- Constantes del Juego ---
 const VIDAS_INICIALES = 3;
 const POSICION_TORRE = 100;
@@ -766,90 +891,11 @@ io.on('connection', (socket) => {
     try {
       console.log(`El jugador ${socket.jugador.nombre} está iniciando el nivel ${idNivel}`);
 
-      let preguntas;
-      if (useSupabase) {
-        console.log(`📚 Cargando preguntas del nivel ${idNivel} desde Supabase...`);
-        const { data, error } = await supabase.from('preguntas').select('*').eq('id_nivel', idNivel);
-        if (error) {
-          console.error(`❌ Error al obtener preguntas desde Supabase:`, error);
-          throw new Error(`Error al obtener preguntas desde Supabase: ${error.message}`);
-        }
-        preguntas = data || [];
-        console.log(`✅ Cargadas ${preguntas.length} preguntas del nivel ${idNivel} desde Supabase`);
-        
-        if (preguntas.length === 0) {
-          console.warn(`⚠️ No se encontraron preguntas para el nivel ${idNivel} en Supabase. Verifica que ejecutaste el script supabase_schema.sql`);
-          throw new Error(`No se encontraron preguntas para el nivel ${idNivel}. Por favor contacta al administrador.`);
-        }
-        
-        // Mezclar preguntas localmente (Fisher-Yates)
-        for (let i = preguntas.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [preguntas[i], preguntas[j]] = [preguntas[j], preguntas[i]];
-        }
-      } else if (dbPool) {
-        const [rows] = await dbPool.query('SELECT * FROM PREGUNTAS WHERE id_nivel = ? ORDER BY RAND()', [idNivel]);
-        preguntas = rows;
-      } else {
-        // Datos mock para desarrollo
-        const preguntasDemo = [
-          {
-            id_pregunta: 1,
-            id_nivel: idNivel,
-            enunciado_funcion: "f(x) = 3x²",
-            respuesta_correcta: "6x",
-            opcion_b: "3x",
-            opcion_c: "6x²",
-            opcion_d: "9x"
-          },
-          {
-            id_pregunta: 2,
-            id_nivel: idNivel,
-            enunciado_funcion: "f(x) = 2x³",
-            respuesta_correcta: "6x²",
-            opcion_b: "2x²",
-            opcion_c: "6x³",
-            opcion_d: "2x"
-          },
-          {
-            id_pregunta: 3,
-            id_nivel: idNivel,
-            enunciado_funcion: "f(x) = 5x",
-            respuesta_correcta: "5",
-            opcion_b: "5x",
-            opcion_c: "x",
-            opcion_d: "0"
-          },
-          {
-            id_pregunta: 4,
-            id_nivel: idNivel,
-            enunciado_funcion: "f(x) = x⁴",
-            respuesta_correcta: "4x³",
-            opcion_b: "x³",
-            opcion_c: "4x⁴",
-            opcion_d: "x⁴"
-          },
-          {
-            id_pregunta: 5,
-            id_nivel: idNivel,
-            enunciado_funcion: "f(x) = 7",
-            respuesta_correcta: "0",
-            opcion_b: "7",
-            opcion_c: "7x",
-            opcion_d: "1"
-          }
-        ];
-        
-        // Duplicar preguntas para tener más variedad
-        preguntas = [...preguntasDemo, ...preguntasDemo, ...preguntasDemo];
-        
-        // Mezclar preguntas
-        for (let i = preguntas.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [preguntas[i], preguntas[j]] = [preguntas[j], preguntas[i]];
-        }
+      // Obtener preguntas de forma robusta (soporta supabase/mysql y varios nombres de columna)
+      let preguntas = await obtenerPreguntasNivel(idNivel);
+      if (!preguntas || preguntas.length === 0) {
+        throw new Error(`No se encontraron preguntas para el nivel ${idNivel}. Revisa la base de datos o las variables de entorno.`);
       }
-      if (!preguntas || preguntas.length === 0) throw new Error(`No se encontraron preguntas para el nivel ${idNivel}`);
 
       // Obtener vidas extra del jugador desde la base de datos
       let vidasExtra = 0;
@@ -912,6 +958,13 @@ io.on('connection', (socket) => {
 
       gameSessions.set(socket.id, nuevaSesion);
       console.log(`Sesión creada para ${socket.jugador.nombre}. Iniciando bucle de juego...`);
+
+      // Asegurarnos de tener plantillas de enemigos cargadas antes de iniciar el bucle
+      try {
+        await cargarEnemigosSiNecesarios();
+      } catch (err) {
+        console.warn('No se pudieron cargar plantillas de enemigos en tiempo de ejecución:', err.message || err);
+      }
 
       socket.emit('estado-juego-actualizado', {
         vidasRestantes: nuevaSesion.vidas,

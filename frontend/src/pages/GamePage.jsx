@@ -46,6 +46,7 @@ function GamePage() {
     { id: 4, nombre: 'Experto', oleadas: 6, descripcion: '¡Solo para los más valientes!' }
   ]
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const token = localStorage.getItem('token')
     const username = localStorage.getItem('username')
@@ -184,10 +185,10 @@ function GamePage() {
         loseSoundRef.current.play().catch(err => console.log('Error playing lose sound:', err))
       }
       
-      // Redirigir al dashboard después de 5 segundos
+      // Redirigir al dashboard después de 3 minutos para permitir revisar retroalimentación
       setTimeout(() => {
         navigate('/dashboard')
-      }, 5000)
+      }, 180000)
     })
 
     newSocket.on('nivel-completado', (data) => {
@@ -235,7 +236,7 @@ function GamePage() {
     return () => {
       newSocket.disconnect()
     }
-  }, [navigate])
+  }, [navigate, settings])
 
   const iniciarNivel = (nivelSeleccionado = nivel) => {
     if (socket) {
