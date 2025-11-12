@@ -1198,7 +1198,7 @@ function gameTick(socketId) {
         sesion.spawnCounter = 0;
         sesion.oleadaCompletada = false;
 
-        console.log(`🌊 OLEADA ${sesion.oleadaActual + 1} INICIADA - ${configOleada.zombisPorOleada} zombis (Zombis restantes en pantalla: ${sesion.zombis.length})`);
+        console.log(`🌊 OLEADA ${sesion.oleadaActual + 1}/${sesion.oleadasConfig.length} INICIADA - ${configOleada.zombisPorOleada} zombis programados (Zombis en pantalla: ${sesion.zombis.length})`);
         sesion.socket.emit('oleada-iniciada', {
           numeroOleada: sesion.oleadaActual + 1,
           zombisTotal: configOleada.zombisPorOleada
@@ -1206,7 +1206,7 @@ function gameTick(socketId) {
       } else {
         sesion.descansoEntreOleadas--;
         if (sesion.descansoEntreOleadas % 2 === 0) { // Log cada 2 ticks
-          console.log(`⏳ Descanso oleada ${sesion.oleadaActual + 1}: ${sesion.descansoEntreOleadas} ticks restantes`);
+          console.log(`⏳ Descanso antes oleada ${sesion.oleadaActual + 1}: ${sesion.descansoEntreOleadas} ticks restantes`);
         }
       }
     }
@@ -1276,16 +1276,19 @@ function gameTick(socketId) {
       console.log(`🎁 Regalo por oleada ${oleadaCompletada}: ❄️ Copo (Total: ${sesion.comodines.copos})`);
     }
 
-    // Resetear para siguiente oleada
-    sesion.zombisEnOleada = 0;
-    sesion.oleadaActual++;
-    sesion.descansoEntreOleadas = 3; // 3 ticks de descanso (1.8 segundos)
-
+    // Emitir evento de oleada completada ANTES de resetear
     sesion.socket.emit('oleada-completada', { 
       numeroOleada: oleadaCompletada,
       regalo: regaloAleatorio,
       comodines: sesion.comodines
     });
+
+    // Resetear para siguiente oleada
+    sesion.zombisEnOleada = 0;
+    sesion.oleadaActual++;
+    sesion.descansoEntreOleadas = 5; // Aumentar a 5 ticks de descanso (3 segundos)
+
+    console.log(`🔄 Preparando oleada ${sesion.oleadaActual + 1}. Descanso: ${sesion.descansoEntreOleadas} ticks. Quedan ${sesion.oleadasConfig.length - sesion.oleadaActual} oleadas`);
   }
 
   // 2. LÓGICA DE MOVIMIENTO - Los zombis avanzan constantemente

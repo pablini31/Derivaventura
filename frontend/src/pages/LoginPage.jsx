@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { LogIn, ArrowLeft, Loader } from 'lucide-react'
 import axios from 'axios'
@@ -15,18 +15,9 @@ function LoginPage() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showIntro, setShowIntro] = useState(false)
-
-  useEffect(() => {
-    // Verificar si ya vio la intro
-    const hasSeenIntro = localStorage.getItem('hasSeenIntro')
-    if (!hasSeenIntro) {
-      setShowIntro(true)
-    }
-  }, [])
+  const [showIntro, setShowIntro] = useState(true)
 
   const handleIntroComplete = () => {
-    localStorage.setItem('hasSeenIntro', 'true')
     setShowIntro(false)
   }
 

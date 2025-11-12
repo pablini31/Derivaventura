@@ -96,7 +96,7 @@ function GamePage() {
           }, 500)
         }
         
-        setTimeout(() => setFeedback(null), 1500)
+        setTimeout(() => setFeedback(null), 180000) // 3 minutos
       }
 
       // Si un zombi llegó a la base
